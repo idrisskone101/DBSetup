@@ -1,0 +1,40 @@
+{
+  "name": "dbsetup",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "ingest": "node injest.js",
+    "ingest:test": "node test-ingest.js",
+    "ingest:full": "node injest.js",
+    "pipeline:status": "node check-pipeline-status.js",
+    "backfill": "node generate-embeddings-backfill.js",
+    "backfill:multi": "node generate-multi-embeddings-backfill.js",
+    "backfill:multi:incremental": "node generate-multi-embeddings-backfill.js --incremental",
+    "backfill:multi:chunked": "node generate-multi-embeddings-backfill-chunked.js",
+    "search": "node test-semantic-search.js",
+    "search:multi": "node test-multi-embedding-search.js",
+    "tune:weights": "node test-multi-embedding-search.js --tune",
+    "enrich": "node run-enrichment.js",
+    "enrich:test": "node run-enrichment.js --test",
+    "enrich:tmdb": "node tmdb-enrich.js",
+    "enrich:titles": "node enrich-titles.js",
+    "enrich:titles:test": "node enrich-titles.js --test",
+    "re-enrich": "node re-enrich-missing.js",
+    "re-enrich:dry-run": "node re-enrich-missing.js --dry-run",
+    "re-enrich:movies": "node re-enrich-missing.js --kind movie",
+    "re-enrich:tv": "node re-enrich-missing.js --kind tv",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "TMDB to Supabase data ingestion with batching",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.0",
+    "axios": "^1.12.2",
+    "dotenv": "^17.2.3",
+    "openai": "^6.6.0",
+    "undici": "^7.16.0"
+  }
+}
