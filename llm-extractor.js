@@ -8,6 +8,8 @@ dotenv.config();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  timeout: 60000, // 60 second timeout
+  maxRetries: 2, // Retry failed requests twice
 });
 
 /**
@@ -49,17 +51,35 @@ Your task is to extract DESCRIPTIVE, CONTEXTUALIZED metadata. DO NOT over-simpli
    ✅ GOOD EXAMPLES:
    - "dark comedy" (NOT "dark" + "comedy" separately!)
    - "psychological horror"
+   - "psychological thriller"
    - "whimsical fantasy adventure"
    - "gritty neo-noir thriller"
    - "melancholic coming-of-age drama"
    - "satirical sci-fi"
    - "body horror with dark humor"
+   - "absurdist dark comedy"
+   - "deadpan comedy"
+   - "black comedy"
+   - "horror comedy"
+   - "romantic thriller"
+   - "action-packed sci-fi"
 
    ❌ BAD EXAMPLES (over-atomized):
    - "dark", "comedy" (separately) → This breaks semantic binding!
    - "psychological", "horror" (separately) → Loses context!
    - "action" (too generic)
    - "drama" (meaningless alone)
+   - "comedy" (standalone - always needs modifier)
+   - "horror" (standalone - always needs modifier)
+   - "dark" (standalone - always needs genre attached)
+   - "thriller" (standalone - always needs modifier)
+
+   **CRITICAL RULES FOR VIBES:**
+   1. NEVER use single-word genre names alone: "comedy", "horror", "thriller", "drama", "action"
+   2. ALWAYS combine mood adjectives with genres: "dark comedy" NOT "dark" + "comedy"
+   3. If you detect BOTH a mood AND a genre, MERGE them into ONE compound vibe
+   4. Each vibe MUST be 2-4 words minimum (except very specific terms like "noir")
+   5. If the content is dark in tone AND comedic, use "dark comedy" as ONE vibe
 
    Extract 3-6 compound descriptors. Each vibe should be 2-4 words that capture a specific atmospheric quality.
    If the content is BOTH dark AND comedic, use "dark comedy" as ONE vibe, not two separate vibes.
@@ -132,8 +152,8 @@ export async function extractMetadata(wikiText, facts = {}) {
     const content = response.choices[0].message.content ?? "{}";
     const extracted = JSON.parse(content);
 
-    // Validate and normalize the response
-    const metadata = normalizeMetadata(extracted);
+    // Validate and normalize the response (pass genres for vibe validation)
+    const metadata = normalizeMetadata(extracted, facts.genres || []);
 
     console.log(`✅ Extracted metadata:`, {
       slots:
@@ -184,12 +204,149 @@ function buildContextString(facts) {
 }
 
 /**
+ * Validate and fix vibes to ensure compound descriptors are preserved
+ * Merges atomic mood+genre pairs into compounds (e.g., "dark" + "comedy" → "dark comedy")
+ * @param {Array} vibes - Array of vibe strings
+ * @param {Array} genres - Array of genre strings for context
+ * @returns {Array} - Fixed vibes array
+ */
+function validateAndFixVibes(vibes, genres = []) {
+  if (!Array.isArray(vibes) || vibes.length === 0) {
+    return vibes;
+  }
+
+  const genresLower = genres.map((g) => g.toLowerCase());
+  const fixedVibes = [...vibes];
+
+  // Problematic atomic words that should NEVER appear alone
+  const FORBIDDEN_STANDALONE_VIBES = [
+    "comedy",
+    "horror",
+    "thriller",
+    "drama",
+    "action",
+    "dark",
+    "psychological",
+    "romantic",
+    "satirical",
+    "gritty",
+    "whimsical",
+    "noir",
+  ];
+
+  // Common mood + genre combinations to merge
+  const COMPOUND_PATTERNS = [
+    { moods: ["dark", "black"], genres: ["comedy"], result: "dark comedy" },
+    { moods: ["dark"], genres: ["humor"], result: "dark comedy" },
+    {
+      moods: ["psychological"],
+      genres: ["horror", "thriller"],
+      result: (genre) => `psychological ${genre}`,
+    },
+    {
+      moods: ["romantic"],
+      genres: ["comedy", "drama", "thriller"],
+      result: (genre) => `romantic ${genre}`,
+    },
+    {
+      moods: ["satirical"],
+      genres: ["comedy", "sci-fi", "science fiction"],
+      result: (genre) => `satirical ${genre}`,
+    },
+    {
+      moods: ["gritty"],
+      genres: ["thriller", "drama", "crime"],
+      result: (genre) => `gritty ${genre}`,
+    },
+    {
+      moods: ["action-packed"],
+      genres: ["adventure", "sci-fi", "thriller"],
+      result: (genre) => `action-packed ${genre}`,
+    },
+  ];
+
+  // Check for atomic pairs that should be merged
+  for (const pattern of COMPOUND_PATTERNS) {
+    for (const mood of pattern.moods) {
+      for (const genre of pattern.genres) {
+        const hasMood = fixedVibes.some((v) => v.toLowerCase() === mood);
+        const hasGenre =
+          fixedVibes.some((v) => v.toLowerCase() === genre) ||
+          genresLower.includes(genre);
+
+        if (hasMood && hasGenre) {
+          // Found atomic pair - merge them
+          const compound =
+            typeof pattern.result === "function"
+              ? pattern.result(genre)
+              : pattern.result;
+
+          console.log(
+            `  🔧 Merging vibes: "${mood}" + "${genre}" → "${compound}"`,
+          );
+
+          // Remove atomic mood
+          const moodIndex = fixedVibes.findIndex(
+            (v) => v.toLowerCase() === mood,
+          );
+          if (moodIndex >= 0) fixedVibes.splice(moodIndex, 1);
+
+          // Replace genre with compound OR add compound if genre came from metadata
+          const genreIndex = fixedVibes.findIndex(
+            (v) => v.toLowerCase() === genre,
+          );
+          if (genreIndex >= 0) {
+            fixedVibes[genreIndex] = compound;
+          } else {
+            fixedVibes.push(compound);
+          }
+        }
+      }
+    }
+  }
+
+  // Remove forbidden standalone vibes (single-word genre names)
+  const cleanedVibes = fixedVibes.filter((vibe) => {
+    const vibeLower = vibe.toLowerCase().trim();
+
+    // Check if it's a forbidden standalone
+    if (FORBIDDEN_STANDALONE_VIBES.includes(vibeLower)) {
+      console.log(
+        `  ⚠️  Removing forbidden standalone vibe: "${vibe}" (too generic)`,
+      );
+      return false;
+    }
+
+    // Check if it's just a genre name
+    if (genresLower.includes(vibeLower)) {
+      console.log(`  ⚠️  Removing vibe that duplicates genre: "${vibe}"`);
+      return false;
+    }
+
+    return true;
+  });
+
+  // Ensure we have at least 2 vibes - if we filtered too aggressively, keep some originals
+  if (cleanedVibes.length < 2 && vibes.length >= 2) {
+    console.log(
+      `  ⚠️  Too many vibes filtered (${cleanedVibes.length} remaining). Keeping some originals.`,
+    );
+    // Keep vibes that are at least 2 words
+    const multiWordVibes = vibes.filter((v) => v.split(/\s+/).length >= 2);
+    return multiWordVibes.length > 0 ? multiWordVibes : vibes;
+  }
+
+  return cleanedVibes.length > 0 ? cleanedVibes : vibes;
+}
+
+/**
  * Normalize and validate extracted metadata
  * Ensures proper structure and types
  * @param {Object} extracted - Raw LLM response
+ * @param {Array} genres - Original genres for vibe validation
  * @returns {Object} - Normalized metadata
  */
-function normalizeMetadata(extracted) {
+function normalizeMetadata(extracted, genres = []) {
   const normalized = {
     slots: {
       setting_place: extracted.slots?.setting_place || null,
@@ -218,6 +375,11 @@ function normalizeMetadata(extracted) {
 
   if (normalized.tone) normalized.tone = normalized.tone.trim();
   if (normalized.pacing) normalized.pacing = normalized.pacing.trim();
+
+  // Validate and fix vibes (CRITICAL for compound preservation)
+  if (normalized.vibes.length > 0) {
+    normalized.vibes = validateAndFixVibes(normalized.vibes, genres);
+  }
 
   return normalized;
 }
@@ -373,8 +535,8 @@ export async function inferMetadataFromTMDB(row) {
     const content = response.choices[0].message.content ?? "{}";
     const inferred = JSON.parse(content);
 
-    // Validate and normalize the response
-    const metadata = normalizeMetadata(inferred);
+    // Validate and normalize the response (pass genres for vibe validation)
+    const metadata = normalizeMetadata(inferred, tmdbData.genres || []);
 
     console.log(`✅ Inferred metadata from TMDB:`, {
       vibes: metadata.vibes?.length || 0,

@@ -3,6 +3,8 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  timeout: 60000, // 60 second timeout
+  maxRetries: 2, // Retry failed requests twice
 });
 
 /**
@@ -10,18 +12,45 @@ const openai = new OpenAI({
  * Focuses on emotional/atmospheric profile: vibes, tone, pacing, tagline
  * Optimized for "I want something that feels like X" queries
  *
+ * CRITICAL: Emphasizes compound phrases to preserve semantic binding
+ * (e.g., "dark comedy" should be strongly weighted, not split into "dark" + "comedy")
+ *
  * @param {Object} title - Normalized title object
  * @returns {string} - Formatted text for vibe embedding
  */
 export function generateVibeEmbeddingText(title) {
   const parts = [];
 
-  // Vibes (atmospheric descriptors)
+  // Vibes (atmospheric descriptors) - EMPHASIS ON COMPOUND PHRASES
   if (title.vibes && title.vibes.length > 0) {
+    // Repeat compound vibes for stronger semantic binding
+    const compoundVibes = title.vibes.filter((v) => v.split(/\s+/).length >= 2);
+    const singleWordVibes = title.vibes.filter(
+      (v) => v.split(/\s+/).length === 1,
+    );
+
+    // Primary vibe list
     parts.push(`Vibes: ${title.vibes.join(", ")}`);
+
+    // Emphasize compounds by repeating them in natural language
+    if (compoundVibes.length > 0) {
+      parts.push(`This has a ${compoundVibes.join(" and ")} feel`);
+
+      // Extra emphasis for critical compounds like "dark comedy"
+      const criticalCompounds = compoundVibes.filter(
+        (v) =>
+          v.toLowerCase().includes("dark comedy") ||
+          v.toLowerCase().includes("psychological") ||
+          v.toLowerCase().includes("romantic"),
+      );
+
+      if (criticalCompounds.length > 0) {
+        parts.push(`Specifically: ${criticalCompounds.join(", ")}`);
+      }
+    }
   }
 
-  // Tone descriptor
+  // Tone descriptor (often compound itself)
   if (title.tone) {
     parts.push(`Tone: ${title.tone}`);
   }
@@ -373,9 +402,9 @@ export async function generateEmbeddings(titles) {
 
     // Call OpenAI embeddings API
     const response = await openai.embeddings.create({
-      model: "text-embedding-3-small", // 1536 dimensions, cheapest option
+      model: "text-embedding-3-small",
       input: inputs,
-      encoding_format: "float", // Default format
+      encoding_format: "float", // Default format (uses full 1536 dimensions)
     });
 
     // Extract embeddings from response
@@ -479,7 +508,7 @@ export async function generateVibeEmbeddings(titles) {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: inputs,
-      encoding_format: "float",
+      encoding_format: "float", // Default format (uses full 1536 dimensions)
     });
 
     const embeddings = response.data.map((item) => item.embedding);
@@ -526,7 +555,7 @@ export async function generateContentEmbeddings(titles) {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: inputs,
-      encoding_format: "float",
+      encoding_format: "float", // Default format (uses full 1536 dimensions)
     });
 
     const embeddings = response.data.map((item) => item.embedding);
@@ -573,7 +602,7 @@ export async function generateMetadataEmbeddings(titles) {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: inputs,
-      encoding_format: "float",
+      encoding_format: "float", // Default format (uses full 1536 dimensions)
     });
 
     const embeddings = response.data.map((item) => item.embedding);
@@ -585,5 +614,44 @@ export async function generateMetadataEmbeddings(titles) {
   } catch (error) {
     console.error("❌ Error generating metadata embeddings:", error.message);
     return titles.map(() => null);
+  }
+}
+
+/**
+ * Generate all three types of embeddings (vibe, content, metadata) for titles
+ * Returns an array of objects with { vibe, content, metadata } properties
+ * @param {Array} titles - Array of title objects
+ * @returns {Promise<Array<{vibe: Array, content: Array, metadata: Array}>>}
+ */
+export async function generateMultiEmbeddings(titles) {
+  if (!titles || titles.length === 0) {
+    return [];
+  }
+
+  console.log(
+    `🎨 Generating multi-embeddings for ${titles.length} title(s)...`,
+  );
+
+  try {
+    // Generate all three embedding types in parallel
+    const [vibeEmbeddings, contentEmbeddings, metadataEmbeddings] =
+      await Promise.all([
+        generateVibeEmbeddings(titles),
+        generateContentEmbeddings(titles),
+        generateMetadataEmbeddings(titles),
+      ]);
+
+    // Combine into objects
+    const combined = titles.map((title, index) => ({
+      vibe: vibeEmbeddings[index],
+      content: contentEmbeddings[index],
+      metadata: metadataEmbeddings[index],
+    }));
+
+    console.log(`✅ Generated multi-embeddings for ${titles.length} titles`);
+    return combined;
+  } catch (error) {
+    console.error("❌ Error generating multi-embeddings:", error.message);
+    throw error;
   }
 }

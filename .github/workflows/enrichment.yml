@@ -1,0 +1,49 @@
+name: Enrichment Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Number of titles to process per run'
+        required: true
+        default: '1000'
+        type: string
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hour max
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run enrichment pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          echo "🚀 Starting enrichment pipeline..."
+          echo "📊 Batch size: ${{ inputs.batch_size }}"
+          node clean/enrichment-pipeline.js --limit ${{ inputs.batch_size }} --skip-enriched
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enrichment-logs
+          path: |
+            clean/logs/*.json
+          retention-days: 7
+

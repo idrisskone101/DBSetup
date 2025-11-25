@@ -2,6 +2,7 @@ import "dotenv/config.js";
 import { supabase } from "./supabase-upsert.js";
 import OpenAI from "openai";
 import { createInterface } from "readline";
+import { expandQuerySafe, expandQueryCached } from "./query-expansion.js";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -130,10 +131,22 @@ Return ONLY valid JSON:
 
 /**
  * Generate formatted text for each embedding type from a search query
- * @param {string} query - User's search query
+ * Now supports query expansion for improved recall
+ * @param {string} query - User's search query (can be original or expanded)
+ * @param {Object} expandedQuery - Optional pre-expanded query object
  * @returns {Object} - { vibe, content, metadata } text inputs
  */
-function generateQueryTexts(query) {
+function generateQueryTexts(query, expandedQuery = null) {
+  if (expandedQuery) {
+    // Use expanded versions if provided
+    return {
+      vibe: `Vibes: ${expandedQuery.vibe}. Tone: ${expandedQuery.vibe}`,
+      content: `Story: ${expandedQuery.content}. Overview: ${expandedQuery.content}. Themes: ${expandedQuery.content}`,
+      metadata: `Genres: ${expandedQuery.metadata}. Type: ${expandedQuery.metadata}. Keywords: ${expandedQuery.metadata}`,
+    };
+  }
+
+  // Fallback to original format (no expansion)
   return {
     // Vibe: treat query as atmospheric/emotional descriptor
     vibe: `Vibes: ${query}. Tone: ${query}. Tagline: ${query}`,
@@ -149,10 +162,11 @@ function generateQueryTexts(query) {
 /**
  * Generate all 3 embeddings for a search query
  * @param {string} query - User's search query
+ * @param {Object} expandedQuery - Optional pre-expanded query object
  * @returns {Promise<Object>} - { vibe, content, metadata } embeddings
  */
-async function generateQueryEmbeddings(query) {
-  const texts = generateQueryTexts(query);
+async function generateQueryEmbeddings(query, expandedQuery = null) {
+  const texts = generateQueryTexts(query, expandedQuery);
 
   console.log("🤖 Generating query embeddings (3 types)...");
 
@@ -161,6 +175,7 @@ async function generateQueryEmbeddings(query) {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: [texts.content, texts.vibe, texts.metadata],
+      dimensions: 768, // Matryoshka: 768 dims for better performance
       encoding_format: "float",
     });
 
@@ -196,12 +211,44 @@ async function searchWithBlend(query, options = {}) {
     useDynamicWeights = DEFAULT_OPTIONS.useDynamicWeights,
     llmModel = DEFAULT_OPTIONS.llmModel,
     verbose = true,
+    useExpansion = true, // NEW: Enable query expansion by default
+    useCache = true, // NEW: Use caching for expansion
   } = options;
 
   if (verbose) {
     console.log(`\n${"=".repeat(80)}`);
     console.log(`🔍 Query: "${query}"`);
     console.log("=".repeat(80) + "\n");
+  }
+
+  // NEW: Query expansion (if enabled)
+  let expandedQuery = null;
+  if (useExpansion) {
+    if (verbose) {
+      console.log("🔄 Expanding query with LLM...");
+    }
+
+    try {
+      expandedQuery = useCache
+        ? await expandQueryCached(query, { verbose })
+        : await expandQuerySafe(query, { verbose });
+
+      if (verbose && expandedQuery.vibe !== query) {
+        console.log("✅ Query expanded successfully");
+        console.log(`   Vibe: "${expandedQuery.vibe.substring(0, 60)}..."`);
+        console.log(
+          `   Content: "${expandedQuery.content.substring(0, 60)}..."`,
+        );
+        console.log(
+          `   Metadata: "${expandedQuery.metadata.substring(0, 60)}..."\n`,
+        );
+      }
+    } catch (error) {
+      if (verbose) {
+        console.warn(`⚠️  Expansion failed, using original query\n`);
+      }
+      expandedQuery = null;
+    }
   }
 
   // Determine weights: manual override > dynamic > default
@@ -239,8 +286,8 @@ async function searchWithBlend(query, options = {}) {
     }
   }
 
-  // Generate embeddings for query
-  const embeddings = await generateQueryEmbeddings(query);
+  // Generate embeddings for query (with optional expansion)
+  const embeddings = await generateQueryEmbeddings(query, expandedQuery);
 
   // Call SQL function
   if (verbose) {
@@ -674,6 +721,7 @@ async function main() {
     help: args.includes("--help") || args.includes("-h"),
     staticWeights: args.includes("--static-weights"),
     showWeights: args.includes("--show-weights"),
+    noExpansion: args.includes("--no-expansion"), // NEW: Disable query expansion
   };
 
   // Parse LLM model
@@ -710,6 +758,7 @@ Options:
   --tune              Interactive weight tuning mode
   --compare           Compare different weight configurations
   --export            Export results to JSON file
+  --no-expansion      Disable query expansion (use original query only)
   --static-weights    Force static weights (disable dynamic LLM analysis)
   --show-weights      Display weight calculation reasoning in output
   --model=MODEL       Override LLM model for query analysis (default: gpt-4o-mini)
@@ -719,7 +768,7 @@ Options:
   -h, --help          Show this help message
 
 Examples:
-  # Use dynamic weights (default)
+  # Use dynamic weights + query expansion (default)
   node test-multi-embedding-search.js "funny superhero movies"
 
   # Force static weights
@@ -778,11 +827,13 @@ Static Weights (--static-weights): content=40%, vibe=35%, metadata=25%
     : null;
 
   const useDynamicWeights = !flags.staticWeights && !hasManualWeights;
+  const useExpansion = !flags.noExpansion; // NEW: Respect --no-expansion flag
 
   const results = await searchWithBlend(query, {
     weights: manualWeights,
     useDynamicWeights,
     llmModel,
+    useExpansion, // NEW: Pass expansion setting
   });
 
   displayResults(results, { showWeightReasoning: flags.showWeights });

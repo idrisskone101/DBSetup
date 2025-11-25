@@ -1,0 +1,137 @@
+{
+  "project": {
+    "name": "Media Recommendation System",
+    "target_titles": 10000,
+    "current_titles": 990
+  },
+  "rate_limits": {
+    "tmdb": {
+      "delay_ms": 100,
+      "requests_per_second": 10,
+      "max_retries": 3,
+      "backoff_multiplier": 2
+    },
+    "wikipedia": {
+      "delay_ms": 500,
+      "requests_per_second": 2,
+      "max_retries": 2,
+      "backoff_multiplier": 1.5
+    },
+    "openai": {
+      "gpt4o_mini": {
+        "tpm": 200000,
+        "rpm": 500,
+        "max_retries": 2
+      },
+      "text_embedding_3_small": {
+        "tpm": 1000000,
+        "rpm": 3000,
+        "batch_size": 2000
+      }
+    }
+  },
+  "batch_sizes": {
+    "tmdb_ingestion": {
+      "pages_per_batch": 100,
+      "titles_per_page": 20
+    },
+    "enrichment": {
+      "titles_per_batch": 100,
+      "checkpoint_frequency": 10
+    },
+    "embeddings": {
+      "titles_per_batch": 2000,
+      "upsert_chunk_size": 100
+    }
+  },
+  "discovery_strategies": {
+    "popular": {
+      "enabled": true,
+      "movies_pages": 150,
+      "tv_pages": 150,
+      "target_titles": 6000
+    },
+    "targeted": {
+      "enabled": true,
+      "target_titles": 4000,
+      "genres": [
+        "Action",
+        "Drama",
+        "Comedy",
+        "Science Fiction",
+        "Horror",
+        "Thriller",
+        "Romance",
+        "Documentary"
+      ],
+      "titles_per_genre": 250,
+      "year_ranges": [
+        { "start": 2020, "end": 2025, "pages": 25 },
+        { "start": 2010, "end": 2019, "pages": 25 },
+        { "start": 2000, "end": 2009, "pages": 25 },
+        { "start": 1990, "end": 1999, "pages": 25 }
+      ],
+      "min_vote_average": 8.0,
+      "min_vote_count": 100
+    }
+  },
+  "quality_scoring": {
+    "weights": {
+      "slots_filled": 8,
+      "themes_present": 15,
+      "vibes_present": 15,
+      "tone_defined": 10,
+      "pacing_defined": 10,
+      "profile_string": 2
+    },
+    "thresholds": {
+      "excellent": 90,
+      "good": 70,
+      "fair": 50,
+      "poor": 0
+    },
+    "min_themes": 3,
+    "min_vibes": 3,
+    "re_enrich_threshold": 50
+  },
+  "enrichment_tiers": {
+    "tier1": {
+      "name": "wikipedia",
+      "min_text_length": 400,
+      "priority": 1
+    },
+    "tier2": {
+      "name": "tmdb_overview",
+      "min_text_length": 100,
+      "priority": 2
+    },
+    "tier3": {
+      "name": "tmdb_inference",
+      "min_keywords": 1,
+      "priority": 3
+    },
+    "tier4": {
+      "name": "defaults",
+      "priority": 4
+    }
+  },
+  "logging": {
+    "log_directory": "logs",
+    "progress_update_frequency": 10,
+    "console_output": true,
+    "json_logs": true,
+    "database_failures": true
+  },
+  "error_handling": {
+    "auto_retry": true,
+    "max_retry_attempts": 3,
+    "retry_delay_ms": 1000,
+    "continue_on_error": true,
+    "log_all_errors": true
+  },
+  "supabase": {
+    "upsert_batch_size": 100,
+    "query_timeout_ms": 30000,
+    "max_connections": 10
+  }
+}
