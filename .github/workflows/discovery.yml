@@ -1,0 +1,81 @@
+name: Discovery Pipeline
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Discovery mode'
+        required: true
+        default: 'popular'
+        type: choice
+        options:
+          - popular
+          - genre
+      limit:
+        description: 'Maximum titles to discover'
+        required: true
+        default: '50000'
+        type: string
+      filter:
+        description: 'Filter by type'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - movies-only
+          - tv-only
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hour max
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run discovery pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          echo "🚀 Starting discovery pipeline..."
+          echo "📊 Mode: ${{ inputs.mode || 'popular' }}"
+          echo "📊 Limit: ${{ inputs.limit || '50000' }}"
+          echo "📊 Filter: ${{ inputs.filter || 'both' }}"
+
+          # Build command
+          CMD="node clean/discovery/discovery-pipeline.js --mode ${{ inputs.mode || 'popular' }} --limit ${{ inputs.limit || '50000' }}"
+
+          # Add filter if specified
+          if [ "${{ inputs.filter }}" = "movies-only" ]; then
+            CMD="$CMD --movies-only"
+          elif [ "${{ inputs.filter }}" = "tv-only" ]; then
+            CMD="$CMD --tv-only"
+          fi
+
+          # Run the command
+          $CMD
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-logs
+          path: |
+            clean/logs/*.json
+          retention-days: 7

@@ -8,3 +8,8 @@ CREATE INDEX IF NOT EXISTS idx_titles_formats ON titles USING GIN (formats);
 CREATE INDEX IF NOT EXISTS idx_titles_audiences ON titles USING GIN (audiences);
 
 
+
+
+
+
+

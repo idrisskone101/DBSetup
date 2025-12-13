@@ -1,21 +1,25 @@
-name: Enrichment Pipeline
+name: Ingestion Pipeline
 
 on:
   schedule:
-    # Run 1 hour after ingestion (at :30 past 1, 7, 13, 19)
-    - cron: '30 1,7,13,19 * * *'
+    # Run 30 minutes after discovery (offset to avoid overlap)
+    - cron: '30 */6 * * *'
   workflow_dispatch:
     inputs:
-      batch_size:
-        description: 'Number of titles to process per run'
+      limit:
+        description: 'Maximum titles to ingest'
         required: true
-        default: '15000'
+        default: '50000'
         type: string
-      skip_enriched:
-        description: 'Skip already enriched titles'
+      filter:
+        description: 'Filter by type'
         required: false
-        default: true
-        type: boolean
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - movies-only
+          - tv-only
       resume:
         description: 'Resume from checkpoint'
         required: false
@@ -23,7 +27,7 @@ on:
         type: boolean
 
 jobs:
-  enrich:
+  ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hour max
 
@@ -40,24 +44,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run enrichment pipeline
+      - name: Run ingestion pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
         run: |
-          echo "🚀 Starting enrichment pipeline..."
-          echo "📊 Batch size: ${{ inputs.batch_size || '15000' }}"
-          echo "📊 Skip enriched: ${{ inputs.skip_enriched || 'true' }}"
+          echo "🚀 Starting ingestion pipeline..."
+          echo "📊 Limit: ${{ inputs.limit || '50000' }}"
+          echo "📊 Filter: ${{ inputs.filter || 'both' }}"
           echo "📊 Resume: ${{ inputs.resume || 'false' }}"
 
           # Build command
-          CMD="node clean/enrichment-pipeline.js --limit ${{ inputs.batch_size || '15000' }}"
+          CMD="node clean/ingestion/ingestion-pipeline.js --limit ${{ inputs.limit || '50000' }}"
 
-          # Add skip-enriched if specified (default true)
-          if [ "${{ inputs.skip_enriched || 'true' }}" = "true" ]; then
-            CMD="$CMD --skip-enriched"
+          # Add filter if specified
+          if [ "${{ inputs.filter }}" = "movies-only" ]; then
+            CMD="$CMD --movies-only"
+          elif [ "${{ inputs.filter }}" = "tv-only" ]; then
+            CMD="$CMD --tv-only"
           fi
 
           # Add resume if specified
@@ -72,7 +77,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: enrichment-logs
+          name: ingestion-logs
           path: |
             clean/logs/*.json
           retention-days: 7
