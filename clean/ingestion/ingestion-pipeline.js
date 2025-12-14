@@ -15,6 +15,7 @@
  *   node clean/ingestion/ingestion-pipeline.js --movies-only      # Only ingest movies
  *   node clean/ingestion/ingestion-pipeline.js --tv-only          # Only ingest TV shows
  *   node clean/ingestion/ingestion-pipeline.js --resume           # Resume from checkpoint
+ *   node clean/ingestion/ingestion-pipeline.js --retry-failed     # Retry previously failed titles
  */
 
 import dotenv from "dotenv";
@@ -59,6 +60,7 @@ const LIMIT = parseInt(getArg("limit", "50000"), 10);
 const MOVIES_ONLY = args.includes("--movies-only");
 const TV_ONLY = args.includes("--tv-only");
 const RESUME = args.includes("--resume");
+const RETRY_FAILED = args.includes("--retry-failed");
 
 // Scaling config
 const SCALING = CONFIG.scaling || {
@@ -102,10 +104,16 @@ async function getPendingTitles(limit) {
   const fetchFn = async () => {
     let query = supabase
       .from("discovered_titles")
-      .select("*")
-      .eq("ingestion_status", "pending")
-      .order("popularity", { ascending: false })
-      .limit(limit);
+      .select("*");
+
+    // Include failed titles if --retry-failed flag is set
+    if (RETRY_FAILED) {
+      query = query.in("ingestion_status", ["pending", "failed"]);
+    } else {
+      query = query.eq("ingestion_status", "pending");
+    }
+
+    query = query.order("popularity", { ascending: false }).limit(limit);
 
     if (MOVIES_ONLY) {
       query = query.eq("kind", "movie");
@@ -207,6 +215,7 @@ async function main() {
   if (MOVIES_ONLY) console.log(`Filter: Movies only`);
   if (TV_ONLY) console.log(`Filter: TV shows only`);
   if (RESUME) console.log(`Mode: Resume from checkpoint`);
+  if (RETRY_FAILED) console.log(`Mode: Retry failed titles`);
   console.log("");
 
   // Check TMDB connection
