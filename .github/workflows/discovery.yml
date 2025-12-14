@@ -33,6 +33,8 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hour max
+    # Skip scheduled runs if pipeline is paused (set DISCOVERY_PAUSED=true in repo variables)
+    if: github.event_name == 'workflow_dispatch' || vars.DISCOVERY_PAUSED != 'true'
 
     steps:
       - name: Checkout repository
