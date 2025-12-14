@@ -74,6 +74,16 @@ function parseEmbedding(str) {
 }
 
 /**
+ * Sanitize date fields - converts empty strings to null for PostgreSQL DATE type
+ */
+function sanitizeDate(value) {
+  if (!value || value === "\\N" || (typeof value === "string" && value.trim() === "")) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Parse a single row from CSV
  */
 function parseRow(row) {
@@ -84,7 +94,7 @@ function parseRow(row) {
     title: row.title || null,
     original_title: row.original_title || null,
     overview: row.overview || null,
-    release_date: row.release_date || null,
+    release_date: sanitizeDate(row.release_date),
     runtime_minutes: row.runtime_minutes ? parseInt(row.runtime_minutes) : null,
     poster_path: row.poster_path || null,
     backdrop_path: row.backdrop_path || null,
