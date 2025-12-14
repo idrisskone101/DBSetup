@@ -96,37 +96,117 @@ const failures = new FailureLogger("ingestion");
 // ============================================================================
 
 /**
- * Fetch pending discovered titles ordered by popularity
+ * Get ingestion status counts from discovered_titles
+ * @returns {Promise<Object>} - Object with status counts
+ */
+async function getIngestionStats() {
+  try {
+    // Fetch counts individually using Supabase count feature
+    const [pending, ingested, failed, skipped] = await Promise.all([
+      supabase.from("discovered_titles").select("*", { count: "exact", head: true }).eq("ingestion_status", "pending"),
+      supabase.from("discovered_titles").select("*", { count: "exact", head: true }).eq("ingestion_status", "ingested"),
+      supabase.from("discovered_titles").select("*", { count: "exact", head: true }).eq("ingestion_status", "failed"),
+      supabase.from("discovered_titles").select("*", { count: "exact", head: true }).eq("ingestion_status", "skipped"),
+    ]);
+
+    return {
+      pending: pending.count || 0,
+      ingested: ingested.count || 0,
+      failed: failed.count || 0,
+      skipped: skipped.count || 0,
+    };
+  } catch (error) {
+    console.warn("Could not fetch ingestion stats:", error.message);
+    return null;
+  }
+}
+
+/**
+ * Display ingestion status tracker
+ * @param {string} label - Label for the tracker (e.g., "BEFORE" or "AFTER")
+ */
+async function displayIngestionTracker(label) {
+  const stats = await getIngestionStats();
+  if (!stats) return;
+
+  const total = (stats.pending || 0) + (stats.ingested || 0) + (stats.failed || 0) + (stats.skipped || 0);
+  const notIngested = (stats.pending || 0) + (stats.failed || 0);
+
+  console.log(`\n┌─────────────────────────────────────────────────────────┐`);
+  console.log(`│  INGESTION TRACKER (${label.padEnd(6)})                            │`);
+  console.log(`├─────────────────────────────────────────────────────────┤`);
+  console.log(`│  Total Discovered:    ${total.toLocaleString().padStart(10)}                      │`);
+  console.log(`│  ─────────────────────────────────────────────────────  │`);
+  console.log(`│  ✓ Ingested:          ${(stats.ingested || 0).toLocaleString().padStart(10)}                      │`);
+  console.log(`│  ⏳ Pending:           ${(stats.pending || 0).toLocaleString().padStart(10)}                      │`);
+  console.log(`│  ✗ Failed:            ${(stats.failed || 0).toLocaleString().padStart(10)}                      │`);
+  console.log(`│  ⊘ Skipped:           ${(stats.skipped || 0).toLocaleString().padStart(10)}                      │`);
+  console.log(`│  ─────────────────────────────────────────────────────  │`);
+  console.log(`│  📊 NOT INGESTED:     ${notIngested.toLocaleString().padStart(10)}                      │`);
+  console.log(`└─────────────────────────────────────────────────────────┘\n`);
+}
+
+/**
+ * Fetch pending discovered titles ordered by popularity with pagination
+ * Supabase has a default 1000 row limit per request, so we paginate
  * @param {number} limit - Maximum titles to fetch
  * @returns {Promise<Array>} - Array of discovered title records
  */
 async function getPendingTitles(limit) {
-  const fetchFn = async () => {
-    let query = supabase
-      .from("discovered_titles")
-      .select("*");
+  const PAGE_SIZE = 1000; // Supabase max rows per request
+  const allTitles = [];
+  let offset = 0;
+  let hasMore = true;
 
-    // Include failed titles if --retry-failed flag is set
-    if (RETRY_FAILED) {
-      query = query.in("ingestion_status", ["pending", "failed"]);
+  console.log(`   Fetching up to ${limit.toLocaleString()} titles (page size: ${PAGE_SIZE})...`);
+
+  while (hasMore && allTitles.length < limit) {
+    const remaining = limit - allTitles.length;
+    const fetchSize = Math.min(PAGE_SIZE, remaining);
+
+    const fetchFn = async () => {
+      let query = supabase
+        .from("discovered_titles")
+        .select("*");
+
+      // Include failed titles if --retry-failed flag is set
+      if (RETRY_FAILED) {
+        query = query.in("ingestion_status", ["pending", "failed"]);
+      } else {
+        query = query.eq("ingestion_status", "pending");
+      }
+
+      if (MOVIES_ONLY) {
+        query = query.eq("kind", "movie");
+      } else if (TV_ONLY) {
+        query = query.eq("kind", "tv");
+      }
+
+      query = query
+        .order("popularity", { ascending: false })
+        .range(offset, offset + fetchSize - 1);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    };
+
+    const batch = await withRetry(fetchFn, { maxRetries: 3 });
+    allTitles.push(...batch);
+
+    if (batch.length < fetchSize) {
+      hasMore = false;
     } else {
-      query = query.eq("ingestion_status", "pending");
+      offset += batch.length;
+      process.stdout.write(`\r   Fetched ${allTitles.length.toLocaleString()} titles...`);
     }
+  }
 
-    query = query.order("popularity", { ascending: false }).limit(limit);
+  if (allTitles.length > 0) {
+    process.stdout.write(`\r   Fetched ${allTitles.length.toLocaleString()} titles    \n`);
+  }
 
-    if (MOVIES_ONLY) {
-      query = query.eq("kind", "movie");
-    } else if (TV_ONLY) {
-      query = query.eq("kind", "tv");
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
-  };
-
-  return withRetry(fetchFn, { maxRetries: 3 });
+  return allTitles;
 }
 
 /**
@@ -217,6 +297,9 @@ async function main() {
   if (RESUME) console.log(`Mode: Resume from checkpoint`);
   if (RETRY_FAILED) console.log(`Mode: Retry failed titles`);
   console.log("");
+
+  // Display initial ingestion tracker
+  await displayIngestionTracker("BEFORE");
 
   // Check TMDB connection
   console.log("🔌 Checking TMDB API connection...");
@@ -358,6 +441,9 @@ async function main() {
   if (failures.getFailureCount() > 0) {
     failures.printSummary();
   }
+
+  // Display final ingestion tracker
+  await displayIngestionTracker("AFTER");
 
   console.log("💡 Next step: Run the enrichment pipeline to add Wikipedia data and embeddings");
   console.log("   node clean/enrichment-pipeline.js --skip-enriched");
