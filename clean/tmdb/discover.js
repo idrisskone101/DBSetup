@@ -167,6 +167,18 @@ export async function getGenres(kind = "movie") {
 }
 
 /**
+ * Sanitize date fields - converts empty strings to null for PostgreSQL DATE type
+ * @param {string|null|undefined} value - Date value to sanitize
+ * @returns {string|null} - Valid date string or null
+ */
+function sanitizeDate(value) {
+  if (!value || (typeof value === "string" && value.trim() === "")) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Normalize a discover result to the staging table format
  * @param {Object} item - Raw TMDB discover result
  * @param {string} kind - "movie" or "tv"
@@ -185,7 +197,7 @@ export function normalizeDiscoverResult(item, kind, source) {
     title: title || "Unknown Title",
     original_title: originalTitle || null,
     overview: item.overview || null,
-    release_date: releaseDate || null,
+    release_date: sanitizeDate(releaseDate),
     popularity: item.popularity || 0,
     vote_average: item.vote_average || 0,
     vote_count: item.vote_count || 0,
