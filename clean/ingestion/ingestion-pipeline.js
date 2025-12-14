@@ -29,6 +29,18 @@ import { CONFIG } from "../lib/config.js";
 
 dotenv.config();
 
+/**
+ * Sanitize date fields - converts empty strings to null for PostgreSQL DATE type
+ * @param {string|null|undefined} value - Date value to sanitize
+ * @returns {string|null} - Valid date string or null
+ */
+function sanitizeDate(value) {
+  if (!value || (typeof value === "string" && value.trim() === "")) {
+    return null;
+  }
+  return value;
+}
+
 // ============================================================================
 // CLI Argument Parsing
 // ============================================================================
@@ -138,7 +150,7 @@ async function fetchTitleDetails(discovered) {
     title: discovered.title,
     original_title: discovered.original_title || (discovered.kind === "movie" ? detail.original_title : detail.original_name),
     overview: detail.overview || discovered.overview,
-    release_date: discovered.release_date || (discovered.kind === "movie" ? detail.release_date : detail.first_air_date),
+    release_date: sanitizeDate(discovered.release_date) || sanitizeDate(discovered.kind === "movie" ? detail.release_date : detail.first_air_date),
     runtime_minutes: detail.runtime || (detail.episode_run_time && detail.episode_run_time[0]) || null,
     poster_path: detail.poster_path || discovered.poster_path,
     backdrop_path: detail.backdrop_path || discovered.backdrop_path,
