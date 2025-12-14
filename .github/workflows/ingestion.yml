@@ -25,6 +25,11 @@ on:
         required: false
         default: false
         type: boolean
+      retry_failed:
+        description: 'Retry previously failed titles'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   ingest:
@@ -54,6 +59,7 @@ jobs:
           echo "📊 Limit: ${{ inputs.limit || '50000' }}"
           echo "📊 Filter: ${{ inputs.filter || 'both' }}"
           echo "📊 Resume: ${{ inputs.resume || 'false' }}"
+          echo "📊 Retry Failed: ${{ inputs.retry_failed || 'false' }}"
 
           # Build command
           CMD="node clean/ingestion/ingestion-pipeline.js --limit ${{ inputs.limit || '50000' }}"
@@ -68,6 +74,11 @@ jobs:
           # Add resume if specified
           if [ "${{ inputs.resume }}" = "true" ]; then
             CMD="$CMD --resume"
+          fi
+
+          # Add retry-failed if specified
+          if [ "${{ inputs.retry_failed }}" = "true" ]; then
+            CMD="$CMD --retry-failed"
           fi
 
           # Run the command
