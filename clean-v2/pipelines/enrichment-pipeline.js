@@ -20,7 +20,7 @@ import { generateEmbeddingsForTitle } from "../embeddings/generator.js";
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    limit: 1000,
+    limit: null, // null = process all titles
     force: false,
     resume: false,
     kind: null,
@@ -85,7 +85,7 @@ async function run() {
   }
 
   const totalCount = await getTitleCount(fetchOptions);
-  progress.setTotal(Math.min(totalCount, options.limit));
+  progress.setTotal(options.limit ? Math.min(totalCount, options.limit) : totalCount);
 
   info(`Found ${totalCount} titles needing enrichment, processing ${progress.totalItems}`);
 

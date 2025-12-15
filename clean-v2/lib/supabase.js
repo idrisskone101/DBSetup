@@ -15,9 +15,15 @@ export function getSupabase() {
 }
 
 /**
+ * Supabase default row limit per query
+ */
+const SUPABASE_PAGE_SIZE = 1000;
+
+/**
  * Fetch titles from database with optional filters
+ * Automatically paginates to fetch more than Supabase's 1000 row limit
  * @param {Object} options
- * @param {number} [options.limit] - Max titles to fetch
+ * @param {number} [options.limit] - Max titles to fetch (no limit if not specified)
  * @param {number} [options.offset] - Offset for pagination
  * @param {string} [options.kind] - Filter by 'movie' or 'tv'
  * @param {string[]} [options.ids] - Filter by specific IDs
@@ -27,35 +33,81 @@ export function getSupabase() {
 export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichment } = {}) {
   const supabase = getSupabase();
 
-  let query = supabase.from("titles").select("*");
+  // For small requests or ID-based queries, use single query
+  if ((limit && limit <= SUPABASE_PAGE_SIZE) || (ids && ids.length > 0)) {
+    let query = supabase.from("titles").select("*");
 
-  if (kind) {
-    query = query.eq("kind", kind);
+    if (kind) {
+      query = query.eq("kind", kind);
+    }
+
+    if (ids && ids.length > 0) {
+      query = query.in("id", ids);
+    }
+
+    if (needsEnrichment) {
+      query = query.or("vibes.is.null,vibe_embedding.is.null");
+    }
+
+    if (offset > 0) {
+      query = query.range(offset, offset + (limit || SUPABASE_PAGE_SIZE) - 1);
+    } else if (limit) {
+      query = query.limit(limit);
+    }
+
+    query = query.order("id", { ascending: true });
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch titles: ${error.message}`);
+    }
+
+    return data || [];
   }
 
-  if (ids && ids.length > 0) {
-    query = query.in("id", ids);
+  // For larger requests, paginate through results
+  const allResults = [];
+  let currentOffset = offset;
+  const targetCount = limit || Infinity;
+
+  while (allResults.length < targetCount) {
+    const batchSize = Math.min(SUPABASE_PAGE_SIZE, targetCount - allResults.length);
+
+    let query = supabase.from("titles").select("*");
+
+    if (kind) {
+      query = query.eq("kind", kind);
+    }
+
+    if (needsEnrichment) {
+      query = query.or("vibes.is.null,vibe_embedding.is.null");
+    }
+
+    query = query
+      .order("id", { ascending: true })
+      .range(currentOffset, currentOffset + batchSize - 1);
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch titles: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      break; // No more results
+    }
+
+    allResults.push(...data);
+    currentOffset += data.length;
+
+    // If we got fewer results than requested, we've reached the end
+    if (data.length < batchSize) {
+      break;
+    }
   }
 
-  if (needsEnrichment) {
-    query = query.or("vibes.is.null,vibe_embedding.is.null");
-  }
-
-  if (offset > 0) {
-    query = query.range(offset, offset + (limit || 1000) - 1);
-  } else if (limit) {
-    query = query.limit(limit);
-  }
-
-  query = query.order("id", { ascending: true });
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch titles: ${error.message}`);
-  }
-
-  return data || [];
+  return allResults;
 }
 
 /**

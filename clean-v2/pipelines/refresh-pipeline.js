@@ -17,7 +17,7 @@ import { extractAllMetadata } from "../tmdb/extractors.js";
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    limit: 1000,
+    limit: null, // null = process all titles
     offset: 0,
     kind: null,
     resume: false,
@@ -62,7 +62,8 @@ async function run() {
 
   // Get total count
   const totalCount = await getTitleCount({ kind: options.kind });
-  progress.setTotal(Math.min(totalCount - options.offset, options.limit));
+  const availableTitles = totalCount - options.offset;
+  progress.setTotal(options.limit ? Math.min(availableTitles, options.limit) : availableTitles);
 
   info(`Found ${totalCount} titles, processing ${progress.totalItems}`);
 

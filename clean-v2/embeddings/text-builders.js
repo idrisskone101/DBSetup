@@ -93,7 +93,7 @@ export function buildMetadataText(title) {
   // Type
   parts.push(`Type: ${title.kind === "movie" ? "film" : "television series"}`);
 
-  // Genres
+  // Genres 
   if (Array.isArray(title.genres) && title.genres.length > 0) {
     parts.push(`Genres: ${title.genres.join(", ")}`);
   }

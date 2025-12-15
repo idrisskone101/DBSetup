@@ -16,7 +16,7 @@ const COMMANDS = {
     description: "Re-fetch TMDB metadata for existing titles",
     script: "pipelines/refresh-pipeline.js",
     options: [
-      { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: all)" },
       { flag: "--offset <n>", desc: "Skip first n titles (default: 0)" },
       { flag: "--movies-only", desc: "Only process movies" },
       { flag: "--tv-only", desc: "Only process TV shows" },
@@ -27,7 +27,7 @@ const COMMANDS = {
     description: "Re-enrich titles with Wikipedia + LLM + embeddings",
     script: "pipelines/enrichment-pipeline.js",
     options: [
-      { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: all)" },
       { flag: "--force", desc: "Re-enrich even if already enriched" },
       { flag: "--movies-only", desc: "Only process movies" },
       { flag: "--tv-only", desc: "Only process TV shows" },
