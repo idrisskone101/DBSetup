@@ -28,7 +28,8 @@ const COMMANDS = {
     script: "pipelines/enrichment-pipeline.js",
     options: [
       { flag: "--limit <n>", desc: "Maximum titles to process (default: all)" },
-      { flag: "--force", desc: "Re-enrich even if already enriched" },
+      { flag: "--offset <n>", desc: "Skip first n titles (default: 0)" },
+      { flag: "--unenriched-only", desc: "Only process titles not yet enriched" },
       { flag: "--movies-only", desc: "Only process movies" },
       { flag: "--tv-only", desc: "Only process TV shows" },
       { flag: "--resume", desc: "Resume from checkpoint" },
@@ -52,7 +53,9 @@ function printUsage() {
 
   console.log("\nExamples:");
   console.log("  node index.js refresh --limit 500 --movies-only");
-  console.log("  node index.js enrich --limit 1000 --force");
+  console.log("  node index.js enrich --limit 10000");
+  console.log("  node index.js enrich --offset 10000 --limit 10000");
+  console.log("  node index.js enrich --unenriched-only --limit 5000");
   console.log("  node index.js enrich --resume");
   console.log("");
 }

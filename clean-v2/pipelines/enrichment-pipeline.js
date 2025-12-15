@@ -4,7 +4,7 @@
  */
 
 import { fetchTitles, updateTitle, getTitleCount } from "../lib/supabase.js";
-import { createWikipediaRateLimiter } from "../lib/rate-limiter.js";
+import { createWikipediaRateLimiter, createOpenAIRateLimiter } from "../lib/rate-limiter.js";
 import { ProgressTracker } from "../lib/progress.js";
 import { initFileLogging, closeFileLogging, info, error, warn, debug } from "../lib/logger.js";
 import { createWikipediaFetcher } from "../wikipedia/fetcher.js";
@@ -21,9 +21,10 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
     limit: null, // null = process all titles
-    force: false,
+    offset: 0,
     resume: false,
     kind: null,
+    unenrichedOnly: false, // Only process titles that haven't been enriched
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -31,8 +32,10 @@ function parseArgs() {
 
     if (arg === "--limit" && args[i + 1]) {
       options.limit = parseInt(args[++i], 10);
-    } else if (arg === "--force") {
-      options.force = true;
+    } else if (arg === "--offset" && args[i + 1]) {
+      options.offset = parseInt(args[++i], 10);
+    } else if (arg === "--unenriched-only") {
+      options.unenrichedOnly = true;
     } else if (arg === "--resume") {
       options.resume = true;
     } else if (arg === "--movies-only") {
@@ -76,25 +79,29 @@ async function run() {
   // Get titles to process
   const fetchOptions = {
     limit: options.limit,
+    offset: options.offset,
     kind: options.kind,
   };
 
-  // If not forcing, only get titles that need enrichment
-  if (!options.force) {
+  // Only filter to unenriched titles if explicitly requested
+  if (options.unenrichedOnly) {
     fetchOptions.needsEnrichment = true;
   }
 
-  const totalCount = await getTitleCount(fetchOptions);
-  progress.setTotal(options.limit ? Math.min(totalCount, options.limit) : totalCount);
+  // Get total count for progress tracking
+  const totalCount = await getTitleCount({ kind: options.kind, needsEnrichment: options.unenrichedOnly || undefined });
+  const availableTitles = totalCount - options.offset;
+  progress.setTotal(options.limit ? Math.min(availableTitles, options.limit) : availableTitles);
 
-  info(`Found ${totalCount} titles needing enrichment, processing ${progress.totalItems}`);
+  info(`Found ${totalCount} titles total, starting at offset ${options.offset}, processing ${progress.totalItems}`);
 
-  // Fetch titles
+  // Fetch titles with pagination
   const titles = await fetchTitles(fetchOptions);
   info(`Fetched ${titles.length} titles from database`);
 
-  // Create Wikipedia fetcher
+  // Create rate limiters
   const wikiRateLimiter = createWikipediaRateLimiter();
+  const openaiRateLimiter = createOpenAIRateLimiter(150); // 150ms between OpenAI calls
   const wikipedia = createWikipediaFetcher(wikiRateLimiter);
 
   // Process each title
@@ -132,6 +139,7 @@ async function run() {
       }
 
       // Step 2: Extract vibes, tone, pacing
+      await openaiRateLimiter.acquire();
       let vibeResult;
       if (content) {
         vibeResult = await extractVibes(content, title.title, title.kind);
@@ -155,6 +163,7 @@ async function run() {
       }
 
       // Step 3: Extract themes
+      await openaiRateLimiter.acquire();
       let themes;
       if (content) {
         themes = await extractThemes(content, title.title);
@@ -167,6 +176,7 @@ async function run() {
       }
 
       // Step 4: Generate profile string
+      await openaiRateLimiter.acquire();
       let profile;
       if (content) {
         profile = await generateProfile(content, title.title, title.overview);
@@ -195,6 +205,7 @@ async function run() {
       }
 
       // Step 6: Update database
+      updates.enrichment_status = "enriched";
       updates.enriched_at = new Date().toISOString();
       await updateTitle(title.id, updates);
 
