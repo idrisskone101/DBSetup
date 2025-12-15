@@ -34,20 +34,23 @@ export class WikipediaFetcher {
   generateTitlePatterns(title, year, kind) {
     const patterns = [];
 
-    // Clean title
-    const cleanTitle = title.replace(/[^\w\s'-]/g, "").trim();
+    // Clean title - preserve commas as they're often part of official titles
+    const cleanTitle = title.replace(/[^\w\s',!?-]/g, "").trim();
 
     // Exact title
     patterns.push(cleanTitle);
 
-    // With disambiguator
+    // With disambiguator - try most specific patterns first
     if (kind === "movie") {
-      patterns.push(`${cleanTitle} (film)`);
       patterns.push(`${cleanTitle} (${year} film)`);
+      patterns.push(`${cleanTitle} (film)`);
     } else {
-      patterns.push(`${cleanTitle} (TV series)`);
+      // For TV, try year-specific first (handles shows with multiple versions like Dallas)
       patterns.push(`${cleanTitle} (${year} TV series)`);
+      patterns.push(`${cleanTitle} (TV series)`);
       patterns.push(`${cleanTitle} (miniseries)`);
+      patterns.push(`${cleanTitle} (American TV series)`);
+      patterns.push(`${cleanTitle} (British TV series)`);
     }
 
     // With year only
@@ -71,7 +74,10 @@ export class WikipediaFetcher {
       const response = await retry(
         async () => {
           const res = await fetch(url, {
-            headers: { Accept: "application/json" },
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "MediaRecommendationSystem/1.0 (https://github.com/example; contact@example.com)",
+            },
           });
 
           if (res.status === 404) {
@@ -124,8 +130,12 @@ export class WikipediaFetcher {
       origin: "*",
     });
 
+    const headers = {
+      "User-Agent": "MediaRecommendationSystem/1.0 (https://github.com/example; contact@example.com)",
+    };
+
     try {
-      const response = await fetch(`${this.searchUrl}?${params}`);
+      const response = await fetch(`${this.searchUrl}?${params}`, { headers });
       if (!response.ok) return null;
 
       const data = await response.json();
@@ -156,8 +166,12 @@ export class WikipediaFetcher {
       origin: "*",
     });
 
+    const headers = {
+      "User-Agent": "MediaRecommendationSystem/1.0 (https://github.com/example; contact@example.com)",
+    };
+
     try {
-      const response = await fetch(`${this.searchUrl}?${params}`);
+      const response = await fetch(`${this.searchUrl}?${params}`, { headers });
       if (!response.ok) return [];
 
       const data = await response.json();

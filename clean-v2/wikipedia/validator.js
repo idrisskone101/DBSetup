@@ -105,6 +105,23 @@ function mentionsMediaType(extract, kind) {
       "hbo series",
       "amazon series",
       "created by",
+      "sitcom",
+      "comedy series",
+      "drama series",
+      "soap opera",
+      "british sitcom",
+      "american sitcom",
+      "animated series",
+      "talk show",
+      "game show",
+      "reality series",
+      "anthology series",
+      "prime time",
+      "primetime",
+      "aired on",
+      "broadcast on",
+      "premiered on",
+      "first aired",
     ];
     return tvTerms.some((term) => firstPart.includes(term));
   }
