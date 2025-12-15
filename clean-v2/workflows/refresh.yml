@@ -1,4 +1,4 @@
-name: Enrichment Pipeline (Clean-v2)
+name: Refresh Pipeline (Clean-v2)
 
 on:
   workflow_dispatch:
@@ -6,13 +6,8 @@ on:
       limit:
         description: 'Maximum titles to process'
         required: true
-        default: '5000'
+        default: '10000'
         type: string
-      force:
-        description: 'Re-enrich even if already enriched'
-        required: false
-        default: false
-        type: boolean
       filter:
         description: 'Filter by type'
         required: false
@@ -22,6 +17,11 @@ on:
           - both
           - movies-only
           - tv-only
+      offset:
+        description: 'Skip first n titles'
+        required: false
+        default: '0'
+        type: string
       resume:
         description: 'Resume from checkpoint'
         required: false
@@ -29,7 +29,7 @@ on:
         type: boolean
 
 jobs:
-  enrich:
+  refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hour max
 
@@ -46,25 +46,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run enrichment pipeline
+      - name: Run refresh pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
         run: |
-          echo "Starting enrichment pipeline..."
+          echo "Starting refresh pipeline..."
           echo "Limit: ${{ inputs.limit }}"
-          echo "Force: ${{ inputs.force }}"
           echo "Filter: ${{ inputs.filter }}"
+          echo "Offset: ${{ inputs.offset }}"
           echo "Resume: ${{ inputs.resume }}"
 
           # Build command
-          CMD="node clean-v2/pipelines/enrichment-pipeline.js --limit ${{ inputs.limit }}"
+          CMD="node clean-v2/pipelines/refresh-pipeline.js --limit ${{ inputs.limit }}"
 
-          # Add force if specified
-          if [ "${{ inputs.force }}" = "true" ]; then
-            CMD="$CMD --force"
+          # Add offset if specified
+          if [ "${{ inputs.offset }}" != "0" ]; then
+            CMD="$CMD --offset ${{ inputs.offset }}"
           fi
 
           # Add filter if specified
@@ -86,7 +85,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: enrichment-logs
+          name: refresh-logs
           path: |
             clean-v2/logs/*.log
             clean-v2/logs/*.json
