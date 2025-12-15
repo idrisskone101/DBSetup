@@ -8,8 +8,13 @@ on:
         required: true
         default: '5000'
         type: string
-      force:
-        description: 'Re-enrich even if already enriched'
+      offset:
+        description: 'Skip first n titles (for pagination)'
+        required: false
+        default: '0'
+        type: string
+      unenriched_only:
+        description: 'Only process titles not yet enriched'
         required: false
         default: false
         type: boolean
@@ -55,16 +60,22 @@ jobs:
         run: |
           echo "Starting enrichment pipeline..."
           echo "Limit: ${{ inputs.limit }}"
-          echo "Force: ${{ inputs.force }}"
+          echo "Offset: ${{ inputs.offset }}"
+          echo "Unenriched only: ${{ inputs.unenriched_only }}"
           echo "Filter: ${{ inputs.filter }}"
           echo "Resume: ${{ inputs.resume }}"
 
           # Build command
           CMD="node clean-v2/pipelines/enrichment-pipeline.js --limit ${{ inputs.limit }}"
 
-          # Add force if specified
-          if [ "${{ inputs.force }}" = "true" ]; then
-            CMD="$CMD --force"
+          # Add offset if specified
+          if [ "${{ inputs.offset }}" != "0" ]; then
+            CMD="$CMD --offset ${{ inputs.offset }}"
+          fi
+
+          # Add unenriched-only if specified
+          if [ "${{ inputs.unenriched_only }}" = "true" ]; then
+            CMD="$CMD --unenriched-only"
           fi
 
           # Add filter if specified
@@ -80,6 +91,7 @@ jobs:
           fi
 
           # Run the command
+          echo "Running: $CMD"
           $CMD
 
       - name: Upload logs on failure

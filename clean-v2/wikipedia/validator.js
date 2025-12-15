@@ -3,39 +3,7 @@
  * CRITICAL: This fixes the bug where wrong articles were being matched
  */
 
-/**
- * Calculate simple string similarity (0-1)
- * @param {string} a
- * @param {string} b
- * @returns {number}
- */
-function stringSimilarity(a, b) {
-  if (!a || !b) return 0;
-
-  const s1 = a.toLowerCase().trim();
-  const s2 = b.toLowerCase().trim();
-
-  if (s1 === s2) return 1;
-
-  // Check if one contains the other
-  if (s1.includes(s2) || s2.includes(s1)) {
-    return 0.8;
-  }
-
-  // Simple character-based similarity
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
-
-  if (longer.length === 0) return 1;
-
-  // Count matching characters
-  let matches = 0;
-  for (let i = 0; i < shorter.length; i++) {
-    if (longer.includes(shorter[i])) matches++;
-  }
-
-  return matches / longer.length;
-}
+import { normalizeTitle, titleSimilarity, titlesMatch } from "./title-normalizer.js";
 
 /**
  * Check if article title matches expected title
@@ -44,27 +12,7 @@ function stringSimilarity(a, b) {
  * @returns {boolean}
  */
 function titleMatches(articleTitle, expectedTitle) {
-  if (!articleTitle || !expectedTitle) return false;
-
-  const article = articleTitle.toLowerCase().trim();
-  const expected = expectedTitle.toLowerCase().trim();
-
-  // Exact match
-  if (article === expected) return true;
-
-  // Remove common suffixes for comparison
-  const cleanArticle = article
-    .replace(/\s*\(film\)\s*/i, "")
-    .replace(/\s*\(tv series\)\s*/i, "")
-    .replace(/\s*\(\d{4} film\)\s*/i, "")
-    .replace(/\s*\(\d{4} tv series\)\s*/i, "")
-    .replace(/\s*\(miniseries\)\s*/i, "")
-    .trim();
-
-  if (cleanArticle === expected) return true;
-
-  // High similarity
-  return stringSimilarity(cleanArticle, expected) >= 0.85;
+  return titlesMatch(articleTitle, expectedTitle);
 }
 
 /**
@@ -90,6 +38,15 @@ function mentionsMediaType(extract, kind) {
       "theatrical release",
       "directed by",
       "starring",
+      "feature film",
+      "animated feature",
+      "documentary",
+      "horror film",
+      "comedy film",
+      "action film",
+      "drama film",
+      "sci-fi film",
+      "science fiction film",
     ];
     return filmTerms.some((term) => firstPart.includes(term));
   } else {
@@ -104,6 +61,9 @@ function mentionsMediaType(extract, kind) {
       "netflix series",
       "hbo series",
       "amazon series",
+      "apple tv+ series",
+      "disney+ series",
+      "hulu series",
       "created by",
       "sitcom",
       "comedy series",
@@ -112,9 +72,11 @@ function mentionsMediaType(extract, kind) {
       "british sitcom",
       "american sitcom",
       "animated series",
+      "anime series",
       "talk show",
       "game show",
       "reality series",
+      "reality show",
       "anthology series",
       "prime time",
       "primetime",
@@ -122,6 +84,14 @@ function mentionsMediaType(extract, kind) {
       "broadcast on",
       "premiered on",
       "first aired",
+      "web series",
+      "limited series",
+      "television program",
+      "tv program",
+      "television show",
+      "cartoon series",
+      "children's series",
+      "kids' series",
     ];
     return tvTerms.some((term) => firstPart.includes(term));
   }
@@ -283,9 +253,13 @@ export function isObviouslyWrong(extract) {
     "is a town",
     "is a village",
     "is a country",
+    "is a state",
+    "is a province",
     "is a river",
     "is a mountain",
     "is a lake",
+    "is a sea",
+    "is a ocean",
     "is a politician",
     "is a scientist",
     "is a species",
@@ -295,14 +269,44 @@ export function isObviouslyWrong(extract) {
     "is a company",
     "is an organization",
     "is a university",
+    "is a college",
     "is a school",
     "is a hospital",
     "is a stadium",
     "is a building",
     "is a song",
-    "is a album",
+    "is an album",
     "is a band",
     "is a musician",
+    "is a singer",
+    "is a rapper",
+    "is a composer",
+    "is a book",
+    "is a novel",
+    "is a video game",
+    "is a board game",
+    "is a card game",
+    "is a sport",
+    "is an athlete",
+    "is a footballer",
+    "is a basketball player",
+    "is a baseball player",
+    "is a restaurant",
+    "is a food",
+    "is a dish",
+    "is a beverage",
+    "is a drink",
+    "is a car",
+    "is an automobile",
+    "is a vehicle",
+    "is a ship",
+    "is an aircraft",
+    "is a plane",
+    "is a train",
+    "is a military",
+    "is a weapon",
+    "is a battle",
+    "is a war",
   ];
 
   return wrongIndicators.some((indicator) => text.includes(indicator));

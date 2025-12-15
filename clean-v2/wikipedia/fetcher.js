@@ -7,8 +7,29 @@ import { config } from "../config.js";
 import { retry } from "../lib/retry.js";
 import { createLogger } from "../lib/logger.js";
 import { validateArticle, isObviouslyWrong } from "./validator.js";
+import { generateTitleVariations } from "./title-normalizer.js";
 
 const log = createLogger("[Wiki]");
+
+// Roman numeral conversion for pattern generation
+const ROMAN_TO_ARABIC = {
+  i: "1", ii: "2", iii: "3", iv: "4", v: "5",
+  vi: "6", vii: "7", viii: "8", ix: "9", x: "10",
+  xi: "11", xii: "12", xiii: "13", xiv: "14", xv: "15",
+  xvi: "16", xvii: "17", xviii: "18", xix: "19", xx: "20",
+};
+
+/**
+ * Convert Roman numerals to Arabic in a string
+ * @param {string} text
+ * @returns {string}
+ */
+function convertRomanNumerals(text) {
+  return text.replace(
+    /\b((?:x{0,2}(?:ix|iv|v?i{0,3})|x{1,2}(?:ix|iv|v?i{0,3})?))(?=\s|$|:|-|\))/gi,
+    (match) => ROMAN_TO_ARABIC[match.toLowerCase()] || match
+  );
+}
 
 /**
  * Wikipedia fetcher with validation
@@ -26,37 +47,89 @@ export class WikipediaFetcher {
 
   /**
    * Generate title patterns to try
+   * Uses comprehensive normalization for better Wikipedia matching
    * @param {string} title - Movie/TV title
    * @param {string} year - Release year
    * @param {"movie"|"tv"} kind
    * @returns {string[]}
    */
   generateTitlePatterns(title, year, kind) {
-    const patterns = [];
+    const patterns = new Set();
 
-    // Clean title - preserve commas as they're often part of official titles
-    const cleanTitle = title.replace(/[^\w\s',!?-]/g, "").trim();
+    // Clean title - preserve colons, commas, and other punctuation common in titles
+    const cleanTitle = title.replace(/[^\w\s:',!?&.-]/g, "").trim();
+    patterns.add(cleanTitle);
 
-    // Exact title
-    patterns.push(cleanTitle);
+    // Expand common abbreviations (Vol. → Volume, Pt. → Part, etc.)
+    const expandedTitle = cleanTitle
+      .replace(/\bVol\.\s*/gi, "Volume ")
+      .replace(/\bPt\.\s*/gi, "Part ")
+      .replace(/\bEp\.\s*/gi, "Episode ")
+      .replace(/\bMr\.\s*/gi, "Mister ")
+      .replace(/\bDr\.\s*/gi, "Doctor ")
+      .replace(/\bSt\.\s*/gi, "Saint ")
+      .replace(/\bBros\.\s*/gi, "Brothers ")
+      .replace(/\bVs\.\s*/gi, "Versus ")
+      .trim();
+    if (expandedTitle !== cleanTitle) {
+      patterns.add(expandedTitle);
+    }
 
-    // With disambiguator - try most specific patterns first
+    // Convert Roman numerals to Arabic (e.g., "Rocky III" → "Rocky 3")
+    const arabicTitle = convertRomanNumerals(cleanTitle);
+    if (arabicTitle !== cleanTitle) {
+      patterns.add(arabicTitle);
+    }
+
+    // Expanded + Arabic numerals
+    const expandedArabic = convertRomanNumerals(expandedTitle);
+    if (expandedArabic !== expandedTitle && expandedArabic !== cleanTitle) {
+      patterns.add(expandedArabic);
+    }
+
+    // Try without colons (some Wikipedia articles don't have them)
+    const noColonTitle = cleanTitle.replace(/:/g, "").replace(/\s+/g, " ").trim();
+    if (noColonTitle !== cleanTitle) {
+      patterns.add(noColonTitle);
+    }
+
+    // Ampersand variations
+    if (cleanTitle.includes("&")) {
+      patterns.add(cleanTitle.replace(/\s*&\s*/g, " and "));
+    }
+    if (cleanTitle.toLowerCase().includes(" and ")) {
+      patterns.add(cleanTitle.replace(/\s+and\s+/gi, " & "));
+    }
+
+    // Build final patterns array with disambiguators
+    const result = [...patterns];
+
+    // Add disambiguated versions (most specific first)
     if (kind === "movie") {
-      patterns.push(`${cleanTitle} (${year} film)`);
-      patterns.push(`${cleanTitle} (film)`);
+      result.push(`${cleanTitle} (${year} film)`);
+      result.push(`${cleanTitle} (film)`);
+      if (expandedTitle !== cleanTitle) {
+        result.push(`${expandedTitle} (${year} film)`);
+        result.push(`${expandedTitle} (film)`);
+      }
     } else {
       // For TV, try year-specific first (handles shows with multiple versions like Dallas)
-      patterns.push(`${cleanTitle} (${year} TV series)`);
-      patterns.push(`${cleanTitle} (TV series)`);
-      patterns.push(`${cleanTitle} (miniseries)`);
-      patterns.push(`${cleanTitle} (American TV series)`);
-      patterns.push(`${cleanTitle} (British TV series)`);
+      result.push(`${cleanTitle} (${year} TV series)`);
+      result.push(`${cleanTitle} (TV series)`);
+      result.push(`${cleanTitle} (miniseries)`);
+      result.push(`${cleanTitle} (American TV series)`);
+      result.push(`${cleanTitle} (British TV series)`);
+      result.push(`${cleanTitle} (Australian TV series)`);
+      result.push(`${cleanTitle} (Canadian TV series)`);
+      result.push(`${cleanTitle} (animated series)`);
+      result.push(`${cleanTitle} (${year} animated series)`);
     }
 
     // With year only
-    patterns.push(`${cleanTitle} (${year})`);
+    result.push(`${cleanTitle} (${year})`);
 
-    return patterns;
+    // Deduplicate while preserving order
+    return [...new Set(result)];
   }
 
   /**
