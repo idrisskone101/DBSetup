@@ -59,18 +59,55 @@ export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichmen
 }
 
 /**
+ * Separate embedding fields from other updates
+ * @param {Object} updates
+ * @returns {{regular: Object, embeddings: Object}}
+ */
+function separateEmbeddings(updates) {
+  const embeddingKeys = ["vibe_embedding", "content_embedding", "metadata_embedding"];
+  const regular = {};
+  const embeddings = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (embeddingKeys.includes(key)) {
+      embeddings[key] = value;
+    } else {
+      regular[key] = value;
+    }
+  }
+
+  return { regular, embeddings };
+}
+
+/**
  * Update a single title in the database
+ * Splits embedding updates to avoid timeout issues
  * @param {number} id - Title ID
  * @param {Object} updates - Fields to update
  * @returns {Promise<void>}
  */
 export async function updateTitle(id, updates) {
   const supabase = getSupabase();
+  const { regular, embeddings } = separateEmbeddings(updates);
 
-  const { error } = await supabase.from("titles").update(updates).eq("id", id);
+  // Update regular fields first (fast)
+  if (Object.keys(regular).length > 0) {
+    const { error } = await supabase.from("titles").update(regular).eq("id", id);
+    if (error) {
+      throw new Error(`Failed to update title ${id}: ${error.message}`);
+    }
+  }
 
-  if (error) {
-    throw new Error(`Failed to update title ${id}: ${error.message}`);
+  // Update embeddings one at a time to avoid timeout
+  for (const [key, value] of Object.entries(embeddings)) {
+    const { error } = await supabase
+      .from("titles")
+      .update({ [key]: value })
+      .eq("id", id);
+
+    if (error) {
+      throw new Error(`Failed to update ${key} for title ${id}: ${error.message}`);
+    }
   }
 }
 
