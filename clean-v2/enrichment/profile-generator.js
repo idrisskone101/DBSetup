@@ -66,8 +66,8 @@ ${contentSnippet}`;
 
     // Validate length
     if (profile.length < 50) {
-      log.warn(`Profile too short for ${title}: ${profile.length} chars`);
-      return null;
+      log.warn(`Profile too short for ${title}: ${profile.length} chars, falling back to overview`);
+      return overview?.slice(0, 200) || null;
     }
 
     if (profile.length > 300) {
@@ -78,7 +78,7 @@ ${contentSnippet}`;
     return profile;
   } catch (error) {
     log.error(`Error generating profile for: ${title}`, { error: error.message });
-    return null;
+    return overview?.slice(0, 200) || null;
   }
 }
 

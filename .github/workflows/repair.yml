@@ -1,0 +1,76 @@
+name: Repair Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum titles to process per run'
+        required: true
+        default: '2000'
+        type: string
+      retry_wiki:
+        description: 'Retry Wikipedia for titles without wiki_source_url'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Report issues without fixing'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hour max
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run repair pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "Starting repair pipeline..."
+          echo "Limit: ${{ inputs.limit }}"
+          echo "Retry Wiki: ${{ inputs.retry_wiki }}"
+          echo "Dry Run: ${{ inputs.dry_run }}"
+
+          # Build command
+          CMD="node clean-v2/pipelines/repair-pipeline.js --limit ${{ inputs.limit }}"
+
+          # Add retry-wiki if specified
+          if [ "${{ inputs.retry_wiki }}" = "true" ]; then
+            CMD="$CMD --retry-wiki"
+          fi
+
+          # Add dry-run if specified
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+
+          # Run the command
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-logs
+          path: |
+            clean-v2/logs/*.log
+            clean-v2/logs/*.json
+          retention-days: 7

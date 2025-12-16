@@ -35,6 +35,15 @@ const COMMANDS = {
       { flag: "--resume", desc: "Resume from checkpoint" },
     ],
   },
+  repair: {
+    description: "Repair enriched titles with missing fields",
+    script: "pipelines/repair-pipeline.js",
+    options: [
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
+      { flag: "--dry-run", desc: "Report issues without fixing" },
+      { flag: "--retry-wiki", desc: "Retry Wikipedia for titles without wiki_source_url" },
+    ],
+  },
 };
 
 function printUsage() {

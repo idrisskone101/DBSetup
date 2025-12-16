@@ -133,6 +133,60 @@ export class WikipediaFetcher {
   }
 
   /**
+   * Generate additional title patterns for repair mode
+   * More aggressive variations for titles that failed initial fetch
+   * @param {string} title - Movie/TV title
+   * @param {string} year - Release year
+   * @param {"movie"|"tv"} kind
+   * @param {Object} tmdbData - Optional TMDB data (director, cast)
+   * @returns {string[]}
+   */
+  generateRepairTitlePatterns(title, year, kind, tmdbData = {}) {
+    const basePatterns = this.generateTitlePatterns(title, year, kind);
+    const additionalPatterns = [];
+
+    // 1. Remove all punctuation
+    const noPunctuation = title.replace(/[^\w\s]/g, "").trim();
+    if (noPunctuation !== title) {
+      additionalPatterns.push(noPunctuation);
+      additionalPatterns.push(`${noPunctuation} (${year} ${kind === "movie" ? "film" : "TV series"})`);
+    }
+
+    // 2. Try without leading numbers ("3 Days Gone" -> "Days Gone")
+    if (/^\d+\s/.test(title)) {
+      const withoutLeadingNumber = title.replace(/^\d+\s/, "").trim();
+      additionalPatterns.push(withoutLeadingNumber);
+      additionalPatterns.push(`${withoutLeadingNumber} (${kind === "movie" ? "film" : "TV series"})`);
+    }
+
+    // 3. Try with "The" prefix if not present
+    if (!title.toLowerCase().startsWith("the ")) {
+      additionalPatterns.push(`The ${title}`);
+    }
+
+    // 4. Try with director name in search (for movies)
+    if (kind === "movie" && tmdbData.director) {
+      additionalPatterns.push(`${title} ${tmdbData.director}`);
+    }
+
+    // 5. Try first word only for multi-word titles (e.g., "Aussie Park Boyz" -> "Aussie")
+    const words = title.split(/\s+/);
+    if (words.length > 2) {
+      additionalPatterns.push(`${words[0]} ${words[1]} (${kind === "movie" ? "film" : "TV series"})`);
+    }
+
+    // 6. Try without subtitle (text after colon or dash)
+    if (title.includes(":") || title.includes(" - ")) {
+      const mainTitle = title.split(/[:\-]/)[0].trim();
+      additionalPatterns.push(mainTitle);
+      additionalPatterns.push(`${mainTitle} (${kind === "movie" ? "film" : "TV series"})`);
+    }
+
+    // Combine and deduplicate
+    return [...new Set([...basePatterns, ...additionalPatterns])];
+  }
+
+  /**
    * Fetch article by title (direct fetch)
    * @param {string} title - Wikipedia article title
    * @returns {Promise<Object|null>}
