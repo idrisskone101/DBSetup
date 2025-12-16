@@ -11,6 +11,7 @@ import { createWikipediaFetcher } from "../wikipedia/fetcher.js";
 import { extractVibes, extractVibesFromOverview } from "../enrichment/vibe-extractor.js";
 import { extractThemes, extractThemesFromOverview } from "../enrichment/theme-extractor.js";
 import { generateProfile, generateProfileFromOverview } from "../enrichment/profile-generator.js";
+import { extractSlots, extractSlotsFromOverview } from "../enrichment/slot-extractor.js";
 import { generateEmbeddingsForTitle } from "../embeddings/generator.js";
 
 /**
@@ -188,10 +189,23 @@ async function run() {
         updates.profile_string = profile;
       }
 
+      // Step 5: Extract slots
+      await openaiRateLimiter.acquire();
+      let slots;
+      if (content) {
+        slots = await extractSlots(content, title.title, title.kind);
+      } else {
+        slots = await extractSlotsFromOverview(title.overview, title.title, title.genres);
+      }
+
+      if (slots) {
+        updates.slots = slots;
+      }
+
       // Merge updates into title for embedding generation
       const enrichedTitle = { ...title, ...updates };
 
-      // Step 5: Generate embeddings
+      // Step 6: Generate embeddings
       const embeddings = await generateEmbeddingsForTitle(enrichedTitle);
 
       if (embeddings.vibe) {
@@ -204,7 +218,7 @@ async function run() {
         updates.metadata_embedding = embeddings.metadata;
       }
 
-      // Step 6: Update database
+      // Step 7: Update database
       updates.enrichment_status = "enriched";
       updates.enriched_at = new Date().toISOString();
       await updateTitle(title.id, updates);
