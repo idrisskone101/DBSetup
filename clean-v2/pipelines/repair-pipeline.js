@@ -55,6 +55,16 @@ function getYear(releaseDate) {
   return releaseDate.slice(0, 4);
 }
 
+// Columns needed for repair processing (includes embeddings for single-row fetch)
+const REPAIR_SELECT_COLUMNS = `
+  id, kind, title, overview, release_date, cast, director, genres, keywords, certification,
+  vibes, themes, tone, pacing, profile_string, slots, wiki_source_url,
+  vibe_embedding, content_embedding, metadata_embedding
+`.replace(/\s+/g, "");
+
+// Lightweight query to find titles needing repair - NO embeddings
+const REPAIR_ID_COLUMNS = `id, title`;
+
 /**
  * Find enriched titles that need repair
  * @param {number} limit
@@ -68,9 +78,10 @@ async function findTitlesNeedingRepair(limit) {
   while (allResults.length < limit) {
     const batchSize = Math.min(SUPABASE_PAGE_SIZE, limit - allResults.length);
 
+    // First pass: get IDs of titles needing repair (lightweight query)
     const { data, error: err } = await supabase
       .from("titles")
-      .select("*")
+      .select(REPAIR_ID_COLUMNS)
       .eq("enrichment_status", "enriched")
       .or(
         "vibes.is.null," +
@@ -106,6 +117,25 @@ async function findTitlesNeedingRepair(limit) {
 }
 
 /**
+ * Fetch full title data for repair processing
+ * @param {number} id
+ * @returns {Promise<Object>}
+ */
+async function fetchFullTitle(id) {
+  const supabase = getSupabase();
+  const { data, error: err } = await supabase
+    .from("titles")
+    .select(REPAIR_SELECT_COLUMNS)
+    .eq("id", id)
+    .single();
+
+  if (err) {
+    throw new Error(`Failed to fetch title ${id}: ${err.message}`);
+  }
+  return data;
+}
+
+/**
  * Find titles needing Wikipedia retry (no wiki_source_url)
  * @param {number} limit
  * @returns {Promise<Array>}
@@ -118,9 +148,10 @@ async function findTitlesNeedingWikiRetry(limit) {
   while (allResults.length < limit) {
     const batchSize = Math.min(SUPABASE_PAGE_SIZE, limit - allResults.length);
 
+    // Lightweight query - no embeddings
     const { data, error: err } = await supabase
       .from("titles")
-      .select("*")
+      .select(REPAIR_ID_COLUMNS)
       .eq("enrichment_status", "enriched")
       .is("wiki_source_url", null)
       .order("id", { ascending: true })
@@ -350,58 +381,6 @@ async function retryWikipediaForTitle(title, wikipedia, openaiRateLimiter, dryRu
   };
 }
 
-/**
- * Print dry run report
- * @param {Array} titles
- */
-function printDryRunReport(titles) {
-  const counts = {
-    vibes: 0,
-    themes: 0,
-    tone: 0,
-    pacing: 0,
-    profile_string: 0,
-    slots: 0,
-    vibe_embedding: 0,
-    content_embedding: 0,
-    metadata_embedding: 0,
-    withWikiUrl: 0,
-    withoutWikiUrl: 0,
-  };
-
-  for (const title of titles) {
-    const needs = analyzeRepairNeeds(title);
-    if (needs.needsVibes) counts.vibes++;
-    if (needs.needsThemes) counts.themes++;
-    if (needs.needsTone) counts.tone++;
-    if (needs.needsPacing) counts.pacing++;
-    if (needs.needsProfile) counts.profile_string++;
-    if (needs.needsSlots) counts.slots++;
-    if (needs.needsVibeEmbedding) counts.vibe_embedding++;
-    if (needs.needsContentEmbedding) counts.content_embedding++;
-    if (needs.needsMetadataEmbedding) counts.metadata_embedding++;
-    if (needs.hasWikiUrl) counts.withWikiUrl++;
-    else counts.withoutWikiUrl++;
-  }
-
-  info("=== DRY RUN REPORT ===");
-  info(`Total titles needing repair: ${titles.length}`);
-  info("");
-  info("Missing fields:");
-  info(`  slots: ${counts.slots}`);
-  info(`  profile_string: ${counts.profile_string}`);
-  info(`  themes: ${counts.themes}`);
-  info(`  vibes: ${counts.vibes}`);
-  info(`  tone: ${counts.tone}`);
-  info(`  pacing: ${counts.pacing}`);
-  info(`  vibe_embedding: ${counts.vibe_embedding}`);
-  info(`  content_embedding: ${counts.content_embedding}`);
-  info(`  metadata_embedding: ${counts.metadata_embedding}`);
-  info("");
-  info("Wikipedia status:");
-  info(`  With wiki_source_url: ${counts.withWikiUrl}`);
-  info(`  Without wiki_source_url: ${counts.withoutWikiUrl}`);
-}
 
 /**
  * Run the repair pipeline
@@ -434,8 +413,10 @@ async function run() {
       const progress = new ProgressTracker("repair-wiki");
       progress.setTotal(titles.length);
 
-      for (const title of titles) {
+      for (const titleStub of titles) {
         try {
+          // Fetch full title data for wiki retry
+          const title = await fetchFullTitle(titleStub.id);
           const result = await retryWikipediaForTitle(title, wikipedia, openaiRateLimiter, false);
           if (result.success) {
             info(`Found Wikipedia for: ${title.title} -> ${result.wikiUrl}`);
@@ -449,8 +430,8 @@ async function run() {
             progress.printProgress();
           }
         } catch (err) {
-          error(`Error retrying Wikipedia for ${title.title}`, { error: err.message });
-          progress.recordFailure(title.id);
+          error(`Error retrying Wikipedia for ${titleStub.title}`, { error: err.message });
+          progress.recordFailure(titleStub.id);
         }
       }
 
@@ -464,13 +445,17 @@ async function run() {
     info(`Found ${titles.length} titles needing repair`);
 
     if (options.dryRun) {
-      printDryRunReport(titles);
+      info(`=== DRY RUN: ${titles.length} titles need repair ===`);
+      titles.slice(0, 20).forEach((t) => info(`  - ${t.title} (${t.id})`));
+      if (titles.length > 20) info(`  ... and ${titles.length - 20} more`);
     } else {
       const progress = new ProgressTracker("repair");
       progress.setTotal(titles.length);
 
-      for (const title of titles) {
+      for (const titleStub of titles) {
         try {
+          // Fetch full title data for repair
+          const title = await fetchFullTitle(titleStub.id);
           const result = await repairTitle(title, rateLimiters, false);
           if (result.success) {
             info(`Repaired: ${title.title} -> ${result.updates.join(", ")}`);
@@ -484,8 +469,8 @@ async function run() {
             progress.printProgress();
           }
         } catch (err) {
-          error(`Error repairing ${title.title}`, { error: err.message });
-          progress.recordFailure(title.id);
+          error(`Error repairing ${titleStub.title}`, { error: err.message });
+          progress.recordFailure(titleStub.id);
         }
       }
 
