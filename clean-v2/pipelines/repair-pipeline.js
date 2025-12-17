@@ -1,11 +1,19 @@
 /**
+ * DEPRECATED: Use repair-tmdb-pipeline.js or repair-enrichment-pipeline.js instead.
+ * This file will be removed in a future update.
+ *
  * Repair Pipeline
- * Fixes enriched titles with missing fields (vibes, themes, slots, profile_string, embeddings)
+ * Fixes titles with missing fields (overview, vibes, themes, slots, profile_string, embeddings)
  */
+
+console.warn("\n⚠️  DEPRECATION WARNING: This pipeline is deprecated.");
+console.warn("   Use 'node index.js repair-tmdb' for TMDB metadata repairs");
+console.warn("   Use 'node index.js repair-enrichment' for enrichment repairs");
+console.warn("   Use 'node index.js repair-status' to view repair queue status\n");
 
 import "dotenv/config";
 import { getSupabase, updateTitle } from "../lib/supabase.js";
-import { createWikipediaRateLimiter, createOpenAIRateLimiter } from "../lib/rate-limiter.js";
+import { createWikipediaRateLimiter, createOpenAIRateLimiter, createTMDBRateLimiter } from "../lib/rate-limiter.js";
 import { ProgressTracker } from "../lib/progress.js";
 import { initFileLogging, closeFileLogging, info, error, warn, debug } from "../lib/logger.js";
 import { createWikipediaFetcher } from "../wikipedia/fetcher.js";
@@ -15,6 +23,8 @@ import { extractThemes, extractThemesFromOverview } from "../enrichment/theme-ex
 import { generateProfile, generateProfileFromOverview } from "../enrichment/profile-generator.js";
 import { extractSlots, extractSlotsFromOverview } from "../enrichment/slot-extractor.js";
 import { generateEmbeddingsForTitle } from "../embeddings/generator.js";
+import { createTMDBClient } from "../tmdb/client.js";
+import { extractAllMetadata } from "../tmdb/extractors.js";
 
 const SUPABASE_PAGE_SIZE = 1000;
 
@@ -28,6 +38,7 @@ function parseArgs() {
     limit: 1000,
     dryRun: false,
     retryWiki: false,
+    fetchTmdb: false, // Fetch missing TMDB metadata (overview, etc)
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -39,6 +50,8 @@ function parseArgs() {
       options.dryRun = true;
     } else if (arg === "--retry-wiki") {
       options.retryWiki = true;
+    } else if (arg === "--fetch-tmdb") {
+      options.fetchTmdb = true;
     }
   }
 
@@ -136,6 +149,45 @@ async function fetchFullTitle(id) {
 }
 
 /**
+ * Find titles missing TMDB metadata (overview)
+ * @param {number} limit
+ * @returns {Promise<Array>}
+ */
+async function findTitlesNeedingTmdb(limit) {
+  const supabase = getSupabase();
+  const allResults = [];
+  let offset = 0;
+
+  while (allResults.length < limit) {
+    const batchSize = Math.min(SUPABASE_PAGE_SIZE, limit - allResults.length);
+
+    const { data, error: err } = await supabase
+      .from("titles")
+      .select(REPAIR_ID_COLUMNS)
+      .is("overview", null)
+      .order("vote_count", { ascending: false, nullsFirst: false })
+      .range(offset, offset + batchSize - 1);
+
+    if (err) {
+      throw new Error(`Failed to fetch titles: ${err.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    allResults.push(...data);
+    offset += data.length;
+
+    if (data.length < batchSize) {
+      break;
+    }
+  }
+
+  return allResults;
+}
+
+/**
  * Find titles needing Wikipedia retry (no wiki_source_url)
  * @param {number} limit
  * @returns {Promise<Array>}
@@ -183,6 +235,7 @@ async function findTitlesNeedingWikiRetry(limit) {
  */
 function analyzeRepairNeeds(title) {
   return {
+    needsOverview: !title.overview,
     needsVibes: !title.vibes,
     needsTone: !title.tone,
     needsPacing: !title.pacing,
@@ -200,15 +253,41 @@ function analyzeRepairNeeds(title) {
  * Repair a single title
  * @param {Object} title
  * @param {Object} rateLimiters
+ * @param {Object|null} tmdb - TMDB client (null to skip TMDB fetch)
  * @param {boolean} dryRun
  * @returns {Promise<Object>}
  */
-async function repairTitle(title, rateLimiters, dryRun) {
+async function repairTitle(title, rateLimiters, tmdb, dryRun) {
   const { wikiRateLimiter, openaiRateLimiter } = rateLimiters;
   const needs = analyzeRepairNeeds(title);
   const updates = {};
   let contentFetched = false;
   let content = null;
+  let tmdbFetched = false;
+
+  // Step 0: Fetch TMDB metadata if overview is missing
+  if (needs.needsOverview && tmdb) {
+    try {
+      const tmdbData = await tmdb.getDetails(title.id, title.kind);
+      if (tmdbData) {
+        const extracted = extractAllMetadata(tmdbData, title.kind);
+        if (extracted.overview) {
+          updates.overview = extracted.overview;
+          title.overview = extracted.overview; // Update local copy for LLM steps
+          tmdbFetched = true;
+        }
+        // Also fill in other missing TMDB fields
+        if (!title.tagline && extracted.tagline) updates.tagline = extracted.tagline;
+        if (!title.keywords?.length && extracted.keywords?.length) updates.keywords = extracted.keywords;
+        if (!title.certification && extracted.certification) updates.certification = extracted.certification;
+        if (!title.runtime_minutes && extracted.runtime_minutes) updates.runtime_minutes = extracted.runtime_minutes;
+        if (!title.director && extracted.director) updates.director = extracted.director;
+        if (!title.creators?.length && extracted.creators?.length) updates.creators = extracted.creators;
+      }
+    } catch (err) {
+      debug(`Failed to fetch TMDB for ${title.id}: ${err.message}`);
+    }
+  }
 
   // Step 1: Get content source if needed
   const needsLlm = needs.needsVibes || needs.needsThemes || needs.needsProfile || needs.needsSlots;
@@ -299,6 +378,7 @@ async function repairTitle(title, rateLimiters, dryRun) {
     needs,
     updates: Object.keys(updates),
     contentFetched,
+    tmdbFetched,
     success: Object.keys(updates).length > 0,
   };
 }
@@ -396,9 +476,56 @@ async function run() {
   const openaiRateLimiter = createOpenAIRateLimiter(100); // 100ms between OpenAI calls
   const wikipedia = createWikipediaFetcher(wikiRateLimiter);
 
+  // Create TMDB client if needed
+  let tmdb = null;
+  if (options.fetchTmdb) {
+    const tmdbRateLimiter = createTMDBRateLimiter();
+    tmdb = createTMDBClient(tmdbRateLimiter);
+  }
+
   const rateLimiters = { wikiRateLimiter, openaiRateLimiter };
 
-  if (options.retryWiki) {
+  if (options.fetchTmdb) {
+    // Mode: Fetch missing TMDB metadata (overview, etc)
+    info("Mode: Fetch missing TMDB metadata");
+
+    const titles = await findTitlesNeedingTmdb(options.limit);
+    info(`Found ${titles.length} titles missing overview`);
+
+    if (options.dryRun) {
+      info("DRY RUN - Would fetch TMDB for these titles:");
+      titles.slice(0, 20).forEach((t) => info(`  - ${t.title} (${t.id})`));
+      if (titles.length > 20) info(`  ... and ${titles.length - 20} more`);
+    } else {
+      const progress = new ProgressTracker("repair-tmdb");
+      progress.setTotal(titles.length);
+
+      for (const titleStub of titles) {
+        try {
+          const title = await fetchFullTitle(titleStub.id);
+          const result = await repairTitle(title, rateLimiters, tmdb, false);
+          if (result.tmdbFetched) {
+            info(`Fetched TMDB for: ${title.title} -> ${result.updates.join(", ")}`);
+            progress.recordSuccess(title.id);
+          } else {
+            debug(`No TMDB data found for: ${title.title}`);
+            progress.recordFailure(title.id);
+          }
+
+          if (progress.processed % 100 === 0) {
+            progress.printProgress();
+          }
+        } catch (err) {
+          error(`Error fetching TMDB for ${titleStub.title}`, { error: err.message });
+          progress.recordFailure(titleStub.id);
+        }
+      }
+
+      progress.saveCheckpoint();
+      info("TMDB fetch completed", progress.getSummary());
+      progress.printProgress();
+    }
+  } else if (options.retryWiki) {
     // Mode: Retry Wikipedia for titles without wiki_source_url
     info("Mode: Retry Wikipedia search");
 
@@ -456,7 +583,7 @@ async function run() {
         try {
           // Fetch full title data for repair
           const title = await fetchFullTitle(titleStub.id);
-          const result = await repairTitle(title, rateLimiters, false);
+          const result = await repairTitle(title, rateLimiters, null, false);
           if (result.success) {
             info(`Repaired: ${title.title} -> ${result.updates.join(", ")}`);
             progress.recordSuccess(title.id);

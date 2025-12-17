@@ -103,3 +103,5 @@ jobs:
             clean-v2/logs/*.log
             clean-v2/logs/*.json
           retention-days: 7
+
+

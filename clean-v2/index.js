@@ -35,8 +35,40 @@ const COMMANDS = {
       { flag: "--resume", desc: "Resume from checkpoint" },
     ],
   },
-  repair: {
+  "repair-tmdb": {
+    description: "Repair titles with missing TMDB metadata",
+    script: "pipelines/repair-tmdb-pipeline.js",
+    options: [
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: 2000)" },
+      { flag: "--dry-run", desc: "Preview only, no changes" },
+      { flag: "--movies-only", desc: "Only process movies" },
+      { flag: "--tv-only", desc: "Only process TV shows" },
+      { flag: "--field <name>", desc: "Target specific field (overview, director, etc.)" },
+      { flag: "--retry-errors", desc: "Re-attempt previously failed API calls" },
+      { flag: "--resume", desc: "Resume from checkpoint" },
+    ],
+  },
+  "repair-enrichment": {
     description: "Repair enriched titles with missing fields",
+    script: "pipelines/repair-enrichment-pipeline.js",
+    options: [
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
+      { flag: "--dry-run", desc: "Preview only, no changes" },
+      { flag: "--wiki-only", desc: "Only retry Wikipedia search" },
+      { flag: "--embeddings-only", desc: "Only regenerate missing embeddings" },
+      { flag: "--field <name>", desc: "Target specific field (vibes, themes, etc.)" },
+      { flag: "--retry-partial", desc: "Re-attempt partial successes" },
+      { flag: "--quick-wins", desc: "Process embeddings-only repairs first" },
+      { flag: "--resume", desc: "Resume from checkpoint" },
+    ],
+  },
+  "repair-status": {
+    description: "Show repair queue status and field breakdown",
+    script: "pipelines/repair-status.js",
+    options: [],
+  },
+  repair: {
+    description: "[DEPRECATED] Use repair-tmdb or repair-enrichment instead",
     script: "pipelines/repair-pipeline.js",
     options: [
       { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
@@ -63,9 +95,10 @@ function printUsage() {
   console.log("\nExamples:");
   console.log("  node index.js refresh --limit 500 --movies-only");
   console.log("  node index.js enrich --limit 10000");
-  console.log("  node index.js enrich --offset 10000 --limit 10000");
   console.log("  node index.js enrich --unenriched-only --limit 5000");
-  console.log("  node index.js enrich --resume");
+  console.log("  node index.js repair-tmdb --limit 500");
+  console.log("  node index.js repair-enrichment --embeddings-only --limit 200");
+  console.log("  node index.js repair-status");
   console.log("");
 }
 

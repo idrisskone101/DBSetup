@@ -1,0 +1,84 @@
+name: Repair Enrichment Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum titles to process'
+        required: true
+        default: '1000'
+        type: string
+      mode:
+        description: 'Repair mode'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - wiki-only
+          - embeddings-only
+      field:
+        description: 'Target specific field (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+      retry_partial:
+        description: 'Re-attempt partial successes'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Preview only, no changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  repair-enrichment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours (LLM calls are slow)
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run enrichment repair pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          CMD="node clean-v2/pipelines/repair-enrichment-pipeline.js --limit ${{ inputs.limit }}"
+
+          if [ "${{ inputs.mode }}" = "wiki-only" ]; then
+            CMD="$CMD --wiki-only"
+          elif [ "${{ inputs.mode }}" = "embeddings-only" ]; then
+            CMD="$CMD --embeddings-only"
+          fi
+
+          if [ -n "${{ inputs.field }}" ]; then
+            CMD="$CMD --field ${{ inputs.field }}"
+          fi
+
+          if [ "${{ inputs.retry_partial }}" = "true" ]; then
+            CMD="$CMD --retry-partial"
+          fi
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-enrichment-logs
+          path: clean-v2/logs/*.log
+          retention-days: 7

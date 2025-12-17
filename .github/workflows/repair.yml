@@ -1,4 +1,7 @@
-name: Repair Pipeline
+# DEPRECATED: Use repair-tmdb.yml or repair-enrichment.yml instead
+# This workflow will be removed in a future update
+
+name: Repair Pipeline (DEPRECATED)
 
 on:
   workflow_dispatch:

@@ -1,0 +1,84 @@
+name: Repair TMDB Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum titles to process'
+        required: true
+        default: '2000'
+        type: string
+      filter:
+        description: 'Filter by type'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - movies-only
+          - tv-only
+      field:
+        description: 'Target specific field (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+      retry_errors:
+        description: 'Re-attempt previously failed API calls'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Preview only, no changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  repair-tmdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run TMDB repair pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          CMD="node clean-v2/pipelines/repair-tmdb-pipeline.js --limit ${{ inputs.limit }}"
+
+          if [ "${{ inputs.filter }}" = "movies-only" ]; then
+            CMD="$CMD --movies-only"
+          elif [ "${{ inputs.filter }}" = "tv-only" ]; then
+            CMD="$CMD --tv-only"
+          fi
+
+          if [ -n "${{ inputs.field }}" ]; then
+            CMD="$CMD --field ${{ inputs.field }}"
+          fi
+
+          if [ "${{ inputs.retry_errors }}" = "true" ]; then
+            CMD="$CMD --retry-errors"
+          fi
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-tmdb-logs
+          path: clean-v2/logs/*.log
+          retention-days: 7
