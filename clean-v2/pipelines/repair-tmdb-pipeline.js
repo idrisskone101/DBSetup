@@ -41,6 +41,7 @@ function parseArgs() {
     field: null,
     retryErrors: false,
     resume: false,
+    skipEmbeddings: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -59,6 +60,8 @@ function parseArgs() {
       options.retryErrors = true;
     } else if (arg === "--resume") {
       options.resume = true;
+    } else if (arg === "--skip-embeddings") {
+      options.skipEmbeddings = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -83,6 +86,7 @@ Options:
   --field <name>    Target specific field (overview, director, cast, etc.)
   --retry-errors    Re-attempt previously failed API calls
   --resume          Resume from checkpoint
+  --skip-embeddings Skip embedding regeneration (faster)
   --help, -h        Show this help
 
 Examples:
@@ -151,7 +155,7 @@ async function findTitlesNeedingTMDBRepair(options) {
 /**
  * Repair a single title's TMDB metadata
  */
-async function repairTitleTMDB(title, tmdb, dryRun) {
+async function repairTitleTMDB(title, tmdb, dryRun, skipEmbeddings = false) {
   const diagnosis = diagnoseMissingTMDBFields(title);
   const updates = {};
   let statusUpdate = null;
@@ -183,10 +187,10 @@ async function repairTitleTMDB(title, tmdb, dryRun) {
       }
     }
 
-    // Regenerate embeddings if any TMDB fields were updated
+    // Regenerate embeddings if any TMDB fields were updated (unless skipped)
     // TMDB fields affect: metadata_embedding (cast, director, genres, keywords)
     //                     content_embedding (overview, profile, themes)
-    if (fieldsRepaired > 0) {
+    if (fieldsRepaired > 0 && !skipEmbeddings) {
       const merged = { ...title, ...updates };
       debug(`Regenerating embeddings for: ${title.title}`);
       const embeddings = await generateEmbeddingsForTitle(merged);
@@ -220,7 +224,7 @@ async function repairTitleTMDB(title, tmdb, dryRun) {
       title: title.title,
       status: statusUpdate?.tmdb_repair_status || "success",
       updates: Object.keys(updates).filter(k => !k.includes("embedding") && !k.includes("repair")),
-      embeddingsRefreshed: fieldsRepaired > 0,
+      embeddingsRefreshed: fieldsRepaired > 0 && !skipEmbeddings,
       missing: diagnosis.missing,
     };
   } catch (err) {
@@ -305,7 +309,7 @@ async function run() {
     }
 
     try {
-      const result = await repairTitleTMDB(title, tmdb, false);
+      const result = await repairTitleTMDB(title, tmdb, false, options.skipEmbeddings);
 
       stats[result.status] = (stats[result.status] || 0) + 1;
 

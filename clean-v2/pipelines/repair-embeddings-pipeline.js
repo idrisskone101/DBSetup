@@ -5,6 +5,7 @@
 
 import "dotenv/config";
 import { getSupabase, updateTitle } from "../lib/supabase.js";
+import { createOpenAIRateLimiter } from "../lib/rate-limiter.js";
 import { ProgressTracker } from "../lib/progress.js";
 import { initFileLogging, closeFileLogging, info, error, warn, debug } from "../lib/logger.js";
 import { generateEmbeddingsForTitle } from "../embeddings/generator.js";
@@ -131,10 +132,11 @@ async function findTitlesNeedingEmbeddings(options) {
 /**
  * Regenerate embeddings for a single title
  */
-async function regenerateEmbeddings(title, dryRun) {
+async function regenerateEmbeddings(title, dryRun, rateLimiter) {
   const updates = {};
 
   try {
+    await rateLimiter.acquire();
     debug(`Regenerating embeddings for: ${title.title}`);
     const embeddings = await generateEmbeddingsForTitle(title);
 
@@ -182,6 +184,9 @@ async function run() {
 
   initFileLogging("repair-embeddings");
   info("Starting embeddings repair pipeline", options);
+
+  // Create rate limiter (100ms between OpenAI calls)
+  const rateLimiter = createOpenAIRateLimiter(100);
 
   // Find titles needing embeddings
   info("Finding titles needing embedding regeneration...");
@@ -233,7 +238,7 @@ async function run() {
     }
 
     try {
-      const result = await regenerateEmbeddings(title, false);
+      const result = await regenerateEmbeddings(title, false, rateLimiter);
 
       stats[result.status] = (stats[result.status] || 0) + 1;
 
