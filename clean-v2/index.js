@@ -62,6 +62,18 @@ const COMMANDS = {
       { flag: "--resume", desc: "Resume from checkpoint" },
     ],
   },
+  "repair-embeddings": {
+    description: "Regenerate embeddings for enriched titles",
+    script: "pipelines/repair-embeddings-pipeline.js",
+    options: [
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: 500)" },
+      { flag: "--dry-run", desc: "Preview only, no changes" },
+      { flag: "--movies-only", desc: "Only process movies" },
+      { flag: "--tv-only", desc: "Only process TV shows" },
+      { flag: "--all", desc: "Process all enriched titles (ignore needs_enrichment flag)" },
+      { flag: "--resume", desc: "Resume from checkpoint" },
+    ],
+  },
   "repair-status": {
     description: "Show repair queue status and field breakdown",
     script: "pipelines/repair-status.js",

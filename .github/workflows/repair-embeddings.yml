@@ -1,4 +1,4 @@
-name: Repair TMDB Pipeline
+name: Repair Embeddings Pipeline
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       limit:
         description: 'Maximum titles to process'
         required: true
-        default: '2000'
+        default: '500'
         type: string
       filter:
         description: 'Filter by type'
@@ -17,13 +17,8 @@ on:
           - both
           - movies-only
           - tv-only
-      field:
-        description: 'Target specific field (leave empty for all)'
-        required: false
-        default: ''
-        type: string
-      retry_errors:
-        description: 'Re-attempt previously failed API calls'
+      all:
+        description: 'Process all enriched titles (ignore needs_enrichment flag)'
         required: false
         default: false
         type: boolean
@@ -32,14 +27,9 @@ on:
         required: false
         default: false
         type: boolean
-      skip_embeddings:
-        description: 'Skip embedding regeneration (run repair-embeddings separately)'
-        required: false
-        default: true
-        type: boolean
 
 jobs:
-  repair-tmdb:
+  repair-embeddings:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -51,13 +41,13 @@ jobs:
           cache: 'npm'
       - run: npm ci
 
-      - name: Run TMDB repair pipeline
+      - name: Run embeddings repair pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          CMD="node clean-v2/pipelines/repair-tmdb-pipeline.js --limit ${{ inputs.limit }}"
+          CMD="node clean-v2/pipelines/repair-embeddings-pipeline.js --limit ${{ inputs.limit }}"
 
           if [ "${{ inputs.filter }}" = "movies-only" ]; then
             CMD="$CMD --movies-only"
@@ -65,20 +55,12 @@ jobs:
             CMD="$CMD --tv-only"
           fi
 
-          if [ -n "${{ inputs.field }}" ]; then
-            CMD="$CMD --field ${{ inputs.field }}"
-          fi
-
-          if [ "${{ inputs.retry_errors }}" = "true" ]; then
-            CMD="$CMD --retry-errors"
+          if [ "${{ inputs.all }}" = "true" ]; then
+            CMD="$CMD --all"
           fi
 
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --dry-run"
-          fi
-
-          if [ "${{ inputs.skip_embeddings }}" = "true" ]; then
-            CMD="$CMD --skip-embeddings"
           fi
 
           echo "Running: $CMD"
@@ -88,6 +70,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: repair-tmdb-logs
+          name: repair-embeddings-logs
           path: clean-v2/logs/*.log
           retention-days: 7

@@ -44,6 +44,7 @@ function parseArgs() {
     retryPartial: false,
     quickWins: false,
     resume: false,
+    skipEmbeddings: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -65,6 +66,8 @@ function parseArgs() {
       options.mode = "embeddings-only";
     } else if (arg === "--resume") {
       options.resume = true;
+    } else if (arg === "--skip-embeddings") {
+      options.skipEmbeddings = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -90,6 +93,7 @@ Options:
   --retry-partial     Re-attempt partial successes
   --quick-wins        Process embeddings-only repairs first
   --resume            Resume from checkpoint
+  --skip-embeddings   Skip embedding regeneration (faster, run repair-embeddings separately)
   --help, -h          Show this help
 
 Examples:
@@ -163,7 +167,7 @@ async function findTitlesNeedingEnrichmentRepair(options) {
 /**
  * Repair a single title's enrichment data
  */
-async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRun) {
+async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRun, skipEmbeddings = false) {
   const { wikiRateLimiter, openaiRateLimiter } = rateLimiters;
   const diagnosis = diagnoseEnrichmentNeeds(title);
   const updates = {};
@@ -282,32 +286,35 @@ async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRu
 
   // Step 3: Embeddings - always regenerate all three when any field is updated
   // This ensures embeddings stay in sync with underlying data
-  const enrichmentFieldsChanged = updates.vibes || updates.tone || updates.pacing ||
-    updates.themes || updates.profile_string || updates.wiki_source_url;
+  // Skip if --skip-embeddings flag is set (run repair-embeddings pipeline separately)
+  if (!skipEmbeddings) {
+    const enrichmentFieldsChanged = updates.vibes || updates.tone || updates.pacing ||
+      updates.themes || updates.profile_string || updates.wiki_source_url;
 
-  const needsEmbeddings =
-    diagnosis.missing.includes("vibe_embedding") ||
-    diagnosis.missing.includes("content_embedding") ||
-    diagnosis.missing.includes("metadata_embedding");
+    const needsEmbeddings =
+      diagnosis.missing.includes("vibe_embedding") ||
+      diagnosis.missing.includes("content_embedding") ||
+      diagnosis.missing.includes("metadata_embedding");
 
-  if (needsEmbeddings || enrichmentFieldsChanged) {
-    try {
-      const merged = { ...title, ...updates };
-      debug(`Regenerating all embeddings for: ${title.title}`);
-      const embeddings = await generateEmbeddingsForTitle(merged);
+    if (needsEmbeddings || enrichmentFieldsChanged) {
+      try {
+        const merged = { ...title, ...updates };
+        debug(`Regenerating all embeddings for: ${title.title}`);
+        const embeddings = await generateEmbeddingsForTitle(merged);
 
-      // Always update all three embeddings when any enrichment data changes
-      if (embeddings.vibe) {
-        updates.vibe_embedding = embeddings.vibe;
+        // Always update all three embeddings when any enrichment data changes
+        if (embeddings.vibe) {
+          updates.vibe_embedding = embeddings.vibe;
+        }
+        if (embeddings.content) {
+          updates.content_embedding = embeddings.content;
+        }
+        if (embeddings.metadata) {
+          updates.metadata_embedding = embeddings.metadata;
+        }
+      } catch (err) {
+        errors.push(`embeddings: ${err.message}`);
       }
-      if (embeddings.content) {
-        updates.content_embedding = embeddings.content;
-      }
-      if (embeddings.metadata) {
-        updates.metadata_embedding = embeddings.metadata;
-      }
-    } catch (err) {
-      errors.push(`embeddings: ${err.message}`);
     }
   }
 
@@ -424,7 +431,8 @@ async function run() {
         rateLimiters,
         wikipedia,
         options.mode,
-        false
+        false,
+        options.skipEmbeddings
       );
 
       stats[result.status] = (stats[result.status] || 0) + 1;

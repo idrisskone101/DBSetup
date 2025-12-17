@@ -32,6 +32,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_embeddings:
+        description: 'Skip embedding regeneration (run repair-embeddings separately)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   repair-enrichment:
@@ -70,6 +75,10 @@ jobs:
 
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --dry-run"
+          fi
+
+          if [ "${{ inputs.skip_embeddings }}" = "true" ]; then
+            CMD="$CMD --skip-embeddings"
           fi
 
           echo "Running: $CMD"
