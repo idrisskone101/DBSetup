@@ -28,7 +28,7 @@ const EMBEDDING_REPAIR_COLUMNS = `
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    limit: 1000,
+    limit: 10000,
     dryRun: false,
     moviesOnly: false,
     tvOnly: false,
@@ -67,7 +67,7 @@ Regenerates embeddings for enriched titles
 Usage: node repair-embeddings-pipeline.js [options]
 
 Options:
-  --limit <n>       Maximum titles to process (default: 1000)
+  --limit <n>       Maximum titles to process (default: 10000)
   --dry-run         Preview only, no changes
   --movies-only     Only process movies
   --tv-only         Only process TV shows
