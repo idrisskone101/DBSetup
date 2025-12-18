@@ -45,6 +45,7 @@ function parseArgs() {
     quickWins: false,
     resume: false,
     skipEmbeddings: false,
+    sparseVibesOnly: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -68,6 +69,8 @@ function parseArgs() {
       options.resume = true;
     } else if (arg === "--skip-embeddings") {
       options.skipEmbeddings = true;
+    } else if (arg === "--sparse-vibes-only") {
+      options.sparseVibesOnly = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -94,6 +97,7 @@ Options:
   --quick-wins        Process embeddings-only repairs first
   --resume            Resume from checkpoint
   --skip-embeddings   Skip embedding regeneration (faster, run repair-embeddings separately)
+  --sparse-vibes-only Only re-enrich titles with < 32 vibes
   --help, -h          Show this help
 
 Examples:
@@ -165,6 +169,44 @@ async function findTitlesNeedingEnrichmentRepair(options) {
 }
 
 /**
+ * Find enriched titles with sparse vibes (< 32 dimensions)
+ */
+async function findTitlesWithSparseVibes(limit) {
+  const supabase = getSupabase();
+  const allResults = [];
+  let offset = 0;
+
+  // Fetch in batches, filter in JS since Supabase can't count jsonb keys
+  while (allResults.length < limit) {
+    const batchSize = Math.min(SUPABASE_PAGE_SIZE, (limit - allResults.length) * 2);
+
+    const { data, error: err } = await supabase
+      .from("titles")
+      .select(ENRICHMENT_REPAIR_COLUMNS)
+      .eq("enrichment_status", "enriched")
+      .not("vibes", "is", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + batchSize - 1);
+
+    if (err) {
+      throw new Error(`Failed to fetch titles: ${err.message}`);
+    }
+
+    if (!data || data.length === 0) break;
+
+    // Filter to sparse vibes (< 32 keys)
+    const sparse = data.filter((t) => Object.keys(t.vibes || {}).length < 32);
+    allResults.push(...sparse);
+
+    offset += data.length;
+
+    if (data.length < batchSize) break;
+  }
+
+  return allResults.slice(0, limit);
+}
+
+/**
  * Repair a single title's enrichment data
  */
 async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRun, skipEmbeddings = false) {
@@ -212,15 +254,15 @@ async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRu
     if (needsLLM) {
       const hasWiki = wikiContent || title.wiki_source_url;
 
-      // Vibes/Tone/Pacing
-      if (diagnosis.missing.includes("vibes") || diagnosis.missing.includes("tone") || diagnosis.missing.includes("pacing")) {
+      // Vibes/Tone/Pacing (also re-extract if sparse_vibes)
+      if (diagnosis.missing.includes("vibes") || diagnosis.missing.includes("sparse_vibes") || diagnosis.missing.includes("tone") || diagnosis.missing.includes("pacing")) {
         try {
           await openaiRateLimiter.acquire();
           const vibeData = wikiContent
             ? await extractVibes(wikiContent, title.title, title.kind)
             : await extractVibesFromOverview(title.overview, title.title, title.kind, title.genres);
 
-          if (diagnosis.missing.includes("vibes") && Object.keys(vibeData.vibes).length > 0) {
+          if ((diagnosis.missing.includes("vibes") || diagnosis.missing.includes("sparse_vibes")) && Object.keys(vibeData.vibes).length > 0) {
             updates.vibes = vibeData.vibes;
           }
           if (diagnosis.missing.includes("tone") && vibeData.tone) {
@@ -343,6 +385,11 @@ async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRu
     statusUpdate = buildEnrichmentRepairStatus("success"); // Nothing to repair
   }
 
+  // Signal repair-embeddings-pipeline to regenerate embeddings if enrichment data changed
+  if (updates.vibes || updates.tone || updates.pacing || updates.themes || updates.profile_string) {
+    updates.needs_enrichment = true;
+  }
+
   // Apply updates (including embeddings)
   if (!dryRun && (allUpdatedFields.length > 0 || statusUpdate)) {
     await updateTitle(title.id, { ...updates, ...statusUpdate });
@@ -376,8 +423,10 @@ async function run() {
 
   // Find titles needing repair
   info("Finding titles needing enrichment repair...");
-  const titles = await findTitlesNeedingEnrichmentRepair(options);
-  info(`Found ${titles.length} titles needing enrichment repair`);
+  const titles = options.sparseVibesOnly
+    ? await findTitlesWithSparseVibes(options.limit)
+    : await findTitlesNeedingEnrichmentRepair(options);
+  info(`Found ${titles.length} titles needing enrichment repair${options.sparseVibesOnly ? " (sparse vibes)" : ""}`);
 
   if (titles.length === 0) {
     info("No titles need enrichment repair");

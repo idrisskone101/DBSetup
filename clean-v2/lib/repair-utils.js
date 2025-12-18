@@ -88,6 +88,9 @@ export function diagnoseEnrichmentNeeds(title) {
   if (!title.vibes || Object.keys(title.vibes).length === 0) {
     missing.push("vibes");
     categories.llm = true;
+  } else if (Object.keys(title.vibes).length < 32) {
+    missing.push("sparse_vibes");
+    categories.llm = true;
   }
   if (!title.tone) {
     missing.push("tone");
@@ -128,6 +131,16 @@ export function diagnoseEnrichmentNeeds(title) {
     hasMissing: missing.length > 0,
     categories,
   };
+}
+
+/**
+ * Check if vibes are sparse (< 32 dimensions)
+ * @param {Object} vibes - Vibes object from database
+ * @returns {boolean}
+ */
+export function hasSparseVibes(vibes) {
+  if (!vibes || typeof vibes !== "object") return true;
+  return Object.keys(vibes).length < 32;
 }
 
 /**

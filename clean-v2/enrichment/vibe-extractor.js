@@ -23,18 +23,48 @@ Your task is to analyze the provided content and extract:
 3. PACING: The narrative pacing
 
 IMPORTANT RULES:
-- Only use vibes from this exact list: ${VIBE_DIMENSIONS.join(", ")}
+- You MUST score ALL 32 vibes from this list: ${VIBE_DIMENSIONS.join(", ")}
 - Only use tones from this exact list: ${TONES.join(", ")}
 - Only use pacing from this exact list: ${PACING.join(", ")}
 - Scores must be between 0.0 and 1.0
-- Include 4-8 vibes that best describe the content
-- Only include vibes with score >= 0.3
+- Use 0.0 for vibes that don't apply at all
+- Use higher scores (0.3-1.0) for vibes that apply
 
 Respond with ONLY a JSON object in this exact format:
 {
   "vibes": {
-    "vibe_name": 0.85,
-    "another_vibe": 0.70
+    "cozy": 0.0,
+    "whimsical": 0.0,
+    "lighthearted": 0.3,
+    "romantic": 0.0,
+    "heartwarming": 0.0,
+    "sentimental": 0.0,
+    "earnest": 0.0,
+    "uplifting": 0.0,
+    "melancholic": 0.0,
+    "bittersweet": 0.0,
+    "somber": 0.0,
+    "brooding": 0.0,
+    "dark": 0.85,
+    "gritty": 0.7,
+    "noir": 0.0,
+    "atmospheric": 0.0,
+    "dreamy": 0.0,
+    "surreal": 0.0,
+    "trippy": 0.0,
+    "tense": 0.9,
+    "suspenseful": 0.0,
+    "thrilling": 0.0,
+    "intense": 0.0,
+    "chaotic": 0.0,
+    "kinetic": 0.0,
+    "energetic": 0.0,
+    "epic": 0.0,
+    "playful": 0.0,
+    "campy": 0.0,
+    "satirical": 0.0,
+    "absurdist": 0.0,
+    "comedic": 0.0
   },
   "tone": "tone_name",
   "pacing": "pacing_name"

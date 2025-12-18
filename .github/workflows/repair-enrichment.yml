@@ -37,6 +37,11 @@ on:
         required: false
         default: true
         type: boolean
+      sparse_vibes_only:
+        description: 'Only re-enrich titles with < 32 vibes'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   repair-enrichment:
@@ -79,6 +84,10 @@ jobs:
 
           if [ "${{ inputs.skip_embeddings }}" = "true" ]; then
             CMD="$CMD --skip-embeddings"
+          fi
+
+          if [ "${{ inputs.sparse_vibes_only }}" = "true" ]; then
+            CMD="$CMD --sparse-vibes-only"
           fi
 
           echo "Running: $CMD"

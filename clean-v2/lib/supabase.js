@@ -27,10 +27,11 @@ const SUPABASE_PAGE_SIZE = 1000;
  * @param {number} [options.offset] - Offset for pagination
  * @param {string} [options.kind] - Filter by 'movie' or 'tv'
  * @param {string[]} [options.ids] - Filter by specific IDs
- * @param {boolean} [options.needsEnrichment] - Filter titles needing enrichment
+ * @param {boolean} [options.needsEnrichment] - Filter titles needing enrichment (vibes/embeddings null)
+ * @param {boolean} [options.notEnriched] - Filter titles where enrichment_status != 'enriched'
  * @returns {Promise<Array>}
  */
-export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichment } = {}) {
+export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichment, notEnriched } = {}) {
   const supabase = getSupabase();
 
   // For small requests or ID-based queries, use single query
@@ -47,6 +48,10 @@ export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichmen
 
     if (needsEnrichment) {
       query = query.or("vibes.is.null,vibe_embedding.is.null");
+    }
+
+    if (notEnriched) {
+      query = query.or("enrichment_status.is.null,enrichment_status.neq.enriched");
     }
 
     if (offset > 0) {
@@ -82,6 +87,10 @@ export async function fetchTitles({ limit, offset = 0, kind, ids, needsEnrichmen
 
     if (needsEnrichment) {
       query = query.or("vibes.is.null,vibe_embedding.is.null");
+    }
+
+    if (notEnriched) {
+      query = query.or("enrichment_status.is.null,enrichment_status.neq.enriched");
     }
 
     query = query
@@ -190,10 +199,11 @@ export async function batchUpdateTitles(batch) {
  * Get total count of titles matching filters
  * @param {Object} options
  * @param {string} [options.kind] - Filter by 'movie' or 'tv'
- * @param {boolean} [options.needsEnrichment] - Filter titles needing enrichment
+ * @param {boolean} [options.needsEnrichment] - Filter titles needing enrichment (vibes/embeddings null)
+ * @param {boolean} [options.notEnriched] - Filter titles where enrichment_status != 'enriched'
  * @returns {Promise<number>}
  */
-export async function getTitleCount({ kind, needsEnrichment } = {}) {
+export async function getTitleCount({ kind, needsEnrichment, notEnriched } = {}) {
   const supabase = getSupabase();
 
   let query = supabase.from("titles").select("id", { count: "exact", head: true });
@@ -204,6 +214,10 @@ export async function getTitleCount({ kind, needsEnrichment } = {}) {
 
   if (needsEnrichment) {
     query = query.or("vibes.is.null,vibe_embedding.is.null");
+  }
+
+  if (notEnriched) {
+    query = query.or("enrichment_status.is.null,enrichment_status.neq.enriched");
   }
 
   const { count, error } = await query;
