@@ -66,7 +66,7 @@ const COMMANDS = {
     description: "Regenerate embeddings for enriched titles",
     script: "pipelines/repair-embeddings-pipeline.js",
     options: [
-      { flag: "--limit <n>", desc: "Maximum titles to process (default: 500)" },
+      { flag: "--limit <n>", desc: "Maximum titles to process (default: 1000)" },
       { flag: "--dry-run", desc: "Preview only, no changes" },
       { flag: "--movies-only", desc: "Only process movies" },
       { flag: "--tv-only", desc: "Only process TV shows" },

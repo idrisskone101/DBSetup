@@ -16,7 +16,7 @@ const SUPABASE_PAGE_SIZE = 1000;
 const EMBEDDING_REPAIR_COLUMNS = `
   id, kind, title, release_date, overview, tagline, director, creators,
   cast, writers, keywords, genres, certification, runtime_minutes,
-  production_countries, collection,
+  production_countries, collection_name,
   vibes, tone, pacing, themes, profile_string,
   vibe_embedding, content_embedding, metadata_embedding,
   needs_enrichment
@@ -28,7 +28,7 @@ const EMBEDDING_REPAIR_COLUMNS = `
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    limit: 500,
+    limit: 1000,
     dryRun: false,
     moviesOnly: false,
     tvOnly: false,
@@ -67,7 +67,7 @@ Regenerates embeddings for enriched titles
 Usage: node repair-embeddings-pipeline.js [options]
 
 Options:
-  --limit <n>       Maximum titles to process (default: 500)
+  --limit <n>       Maximum titles to process (default: 1000)
   --dry-run         Preview only, no changes
   --movies-only     Only process movies
   --tv-only         Only process TV shows
