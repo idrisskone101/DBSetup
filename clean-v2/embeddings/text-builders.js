@@ -122,8 +122,8 @@ export function buildMetadataText(title) {
   }
 
   // Collection (franchise)
-  if (title.collection) {
-    parts.push(`Collection: ${title.collection}`);
+  if (title.collection_name) {
+    parts.push(`Collection: ${title.collection_name}`);
   }
 
   // Year
