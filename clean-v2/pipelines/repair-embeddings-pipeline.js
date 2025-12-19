@@ -33,6 +33,9 @@ function parseArgs() {
     tvOnly: false,
     all: false,
     resume: false,
+    vibeOnly: false,
+    contentOnly: false,
+    metadataOnly: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -49,6 +52,12 @@ function parseArgs() {
       options.all = true;
     } else if (arg === "--resume") {
       options.resume = true;
+    } else if (arg === "--vibe-only") {
+      options.vibeOnly = true;
+    } else if (arg === "--content-only") {
+      options.contentOnly = true;
+    } else if (arg === "--metadata-only") {
+      options.metadataOnly = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -72,11 +81,15 @@ Options:
   --tv-only         Only process TV shows
   --all             Process all enriched titles (ignore needs_enrichment flag)
   --resume          Resume from checkpoint
+  --vibe-only       Only regenerate vibe_embedding (for sparse vibe repairs)
+  --content-only    Only regenerate content_embedding
+  --metadata-only   Only regenerate metadata_embedding
   --help, -h        Show this help
 
 Examples:
   node repair-embeddings-pipeline.js --limit 200
   node repair-embeddings-pipeline.js --all --movies-only
+  node repair-embeddings-pipeline.js --vibe-only --limit 10000
   node repair-embeddings-pipeline.js --dry-run
 `);
 }
@@ -131,7 +144,7 @@ async function findTitlesNeedingEmbeddings(options) {
 /**
  * Regenerate embeddings for a single title
  */
-async function regenerateEmbeddings(title, dryRun, rateLimiter) {
+async function regenerateEmbeddings(title, dryRun, rateLimiter, options = {}) {
   const updates = {};
 
   try {
@@ -139,13 +152,18 @@ async function regenerateEmbeddings(title, dryRun, rateLimiter) {
     debug(`Regenerating embeddings for: ${title.title}`);
     const embeddings = await generateEmbeddingsForTitle(title);
 
-    if (embeddings.vibe) {
+    // Determine which embeddings to update based on options
+    const updateVibe = !options.contentOnly && !options.metadataOnly;
+    const updateContent = !options.vibeOnly && !options.metadataOnly;
+    const updateMetadata = !options.vibeOnly && !options.contentOnly;
+
+    if (embeddings.vibe && updateVibe) {
       updates.vibe_embedding = embeddings.vibe;
     }
-    if (embeddings.content) {
+    if (embeddings.content && updateContent) {
       updates.content_embedding = embeddings.content;
     }
-    if (embeddings.metadata) {
+    if (embeddings.metadata && updateMetadata) {
       updates.metadata_embedding = embeddings.metadata;
     }
 
@@ -237,7 +255,7 @@ async function run() {
     }
 
     try {
-      const result = await regenerateEmbeddings(title, false, rateLimiter);
+      const result = await regenerateEmbeddings(title, false, rateLimiter, options);
 
       stats[result.status] = (stats[result.status] || 0) + 1;
 

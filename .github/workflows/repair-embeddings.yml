@@ -17,6 +17,16 @@ on:
           - both
           - movies-only
           - tv-only
+      embedding_type:
+        description: 'Which embeddings to regenerate'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - vibe-only
+          - content-only
+          - metadata-only
       all:
         description: 'Process all enriched titles (ignore needs_enrichment flag)'
         required: false
@@ -53,6 +63,14 @@ jobs:
             CMD="$CMD --movies-only"
           elif [ "${{ inputs.filter }}" = "tv-only" ]; then
             CMD="$CMD --tv-only"
+          fi
+
+          if [ "${{ inputs.embedding_type }}" = "vibe-only" ]; then
+            CMD="$CMD --vibe-only"
+          elif [ "${{ inputs.embedding_type }}" = "content-only" ]; then
+            CMD="$CMD --content-only"
+          elif [ "${{ inputs.embedding_type }}" = "metadata-only" ]; then
+            CMD="$CMD --metadata-only"
           fi
 
           if [ "${{ inputs.all }}" = "true" ]; then

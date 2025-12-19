@@ -142,18 +142,26 @@ export function isValidTheme(theme) {
 
 /**
  * Validate and filter vibes object to only include valid keys
+ * IMPORTANT: Always returns all 32 vibes, filling missing ones with 0.0
  * @param {Object} vibes - Object with vibe keys and score values
- * @returns {Object} - Filtered object with only valid vibes
+ * @returns {Object} - Complete object with all 32 vibes
  */
 export function validateVibes(vibes) {
-  if (!vibes || typeof vibes !== "object") return {};
-
+  // Initialize all 32 vibes to 0.0
   const validated = {};
-  for (const [key, value] of Object.entries(vibes)) {
-    if (isValidVibe(key) && typeof value === "number" && value >= 0 && value <= 1) {
-      validated[key] = Math.round(value * 100) / 100; // Round to 2 decimals
+  for (const vibe of VIBE_DIMENSIONS) {
+    validated[vibe] = 0.0;
+  }
+
+  // Override with LLM-provided scores
+  if (vibes && typeof vibes === "object") {
+    for (const [key, value] of Object.entries(vibes)) {
+      if (isValidVibe(key) && typeof value === "number" && value >= 0 && value <= 1) {
+        validated[key] = Math.round(value * 100) / 100; // Round to 2 decimals
+      }
     }
   }
+
   return validated;
 }
 
