@@ -23,11 +23,10 @@ import {
 
 const SUPABASE_PAGE_SIZE = 1000;
 
-// Columns needed for enrichment repair
+// Columns needed for enrichment repair (excludes heavy embeddings to avoid timeout)
 const ENRICHMENT_REPAIR_COLUMNS = `
   id, kind, title, release_date, overview, genres, director, cast,
   wiki_source_url, vibes, tone, pacing, themes, profile_string, slots,
-  vibe_embedding, content_embedding, metadata_embedding,
   enrichment_repair_status, enrichment_repair_attempted_at, enrichment_repair_error
 `.replace(/\s+/g, "");
 
