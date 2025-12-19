@@ -12,13 +12,12 @@ import { generateEmbeddingsForTitle } from "../embeddings/generator.js";
 
 const SUPABASE_PAGE_SIZE = 1000;
 
-// Columns needed for embedding generation
+// Columns needed for embedding generation (excludes embeddings to avoid SELECT timeout)
 const EMBEDDING_REPAIR_COLUMNS = `
   id, kind, title, release_date, overview, tagline, director, creators,
   cast, writers, keywords, genres, certification, runtime_minutes,
   production_countries, collection_name,
   vibes, tone, pacing, themes, profile_string,
-  vibe_embedding, content_embedding, metadata_embedding,
   needs_enrichment
 `.replace(/\s+/g, "");
 
