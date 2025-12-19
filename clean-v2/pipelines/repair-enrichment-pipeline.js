@@ -247,7 +247,7 @@ async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRu
   // Step 2: LLM extraction (if needed and not wiki-only or embeddings-only mode)
   if (mode === "all" || mode === "wiki-only") {
     const needsLLM = diagnosis.missing.some((f) =>
-      ["vibes", "tone", "pacing", "themes", "profile_string", "slots"].includes(f)
+      ["vibes", "sparse_vibes", "tone", "pacing", "themes", "profile_string", "slots"].includes(f)
     );
 
     if (needsLLM) {
@@ -364,7 +364,12 @@ async function repairTitleEnrichment(title, rateLimiters, wikipedia, mode, dryRu
   const updatedFields = Object.keys(updates).filter((k) => !k.includes("repair") && !k.includes("embedding"));
   const embeddingsRefreshed = updates.vibe_embedding || updates.content_embedding || updates.metadata_embedding;
   const allUpdatedFields = Object.keys(updates).filter((k) => !k.includes("repair"));
-  const remainingMissing = diagnosis.missing.filter((f) => !allUpdatedFields.includes(f));
+  const remainingMissing = diagnosis.missing.filter((f) => {
+    if (f === "sparse_vibes" && allUpdatedFields.includes("vibes")) return false;
+    // When --skip-embeddings, don't count embeddings as remaining (they're handled separately)
+    if (skipEmbeddings && f.includes("embedding")) return false;
+    return !allUpdatedFields.includes(f);
+  });
 
   if (errors.length > 0) {
     if (errors.some((e) => e.includes("llm") || e.includes("vibes") || e.includes("themes"))) {
