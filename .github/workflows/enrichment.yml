@@ -13,11 +13,17 @@ on:
         required: false
         default: '0'
         type: string
-      unenriched_only:
-        description: 'Only process titles not yet enriched'
+      mode:
+        description: 'Processing mode'
         required: false
-        default: false
-        type: boolean
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - all
+          - embeddings-only
+          - sparse-vibes-only
+          - re-enrich-missing
       filter:
         description: 'Filter by type'
         required: false
@@ -27,6 +33,11 @@ on:
           - both
           - movies-only
           - tv-only
+      skip_embeddings:
+        description: 'Skip embedding generation (run separately)'
+        required: false
+        default: false
+        type: boolean
       resume:
         description: 'Resume from checkpoint'
         required: false
@@ -61,8 +72,9 @@ jobs:
           echo "Starting enrichment pipeline..."
           echo "Limit: ${{ inputs.limit }}"
           echo "Offset: ${{ inputs.offset }}"
-          echo "Unenriched only: ${{ inputs.unenriched_only }}"
+          echo "Mode: ${{ inputs.mode }}"
           echo "Filter: ${{ inputs.filter }}"
+          echo "Skip embeddings: ${{ inputs.skip_embeddings }}"
           echo "Resume: ${{ inputs.resume }}"
 
           # Build command
@@ -73,16 +85,32 @@ jobs:
             CMD="$CMD --offset ${{ inputs.offset }}"
           fi
 
-          # Add unenriched-only if specified
-          if [ "${{ inputs.unenriched_only }}" = "true" ]; then
-            CMD="$CMD --unenriched-only"
-          fi
+          # Add mode flags
+          case "${{ inputs.mode }}" in
+            "all")
+              CMD="$CMD --all"
+              ;;
+            "embeddings-only")
+              CMD="$CMD --embeddings-only"
+              ;;
+            "sparse-vibes-only")
+              CMD="$CMD --sparse-vibes-only"
+              ;;
+            "re-enrich-missing")
+              CMD="$CMD --re-enrich-missing"
+              ;;
+          esac
 
           # Add filter if specified
           if [ "${{ inputs.filter }}" = "movies-only" ]; then
             CMD="$CMD --movies-only"
           elif [ "${{ inputs.filter }}" = "tv-only" ]; then
             CMD="$CMD --tv-only"
+          fi
+
+          # Add skip-embeddings if specified
+          if [ "${{ inputs.skip_embeddings }}" = "true" ]; then
+            CMD="$CMD --skip-embeddings"
           fi
 
           # Add resume if specified
@@ -103,5 +131,3 @@ jobs:
             clean-v2/logs/*.log
             clean-v2/logs/*.json
           retention-days: 7
-
-
